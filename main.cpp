@@ -25,12 +25,17 @@ class Config
 public:
     struct termios orig_termios;
 } config;
+class Command{
+    public :
+    vector<string> instructions;
+} cmd;
 enum KEYS
 {
     ENTER = 0x0A,
     BACK_SPACE = 0x7f,
     TAB = 0x09
 };
+
 void disable_shell()
 {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &config.orig_termios);
@@ -43,7 +48,30 @@ void enable_shell()
     raw.c_lflag &= ~(ECHO | ICANON);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
+vector<string> split_string(string s, char ch)
+{
+    vector<string> tokens;
 
+    stringstream ss(s);
+    string token;
+
+    while (getline(ss, token, ch))
+    {
+        tokens.push_back(token);
+    }
+    return tokens;
+}
+string getParent_dir(string s)
+{
+    vector<string> tokens = split_string(s, '/');
+    string ret;
+    for (int i = 0; i < tokens.size() - 1; i++)
+    {
+        if (i > 0)
+            ret += "/" + tokens[i];
+    }
+    return ret;
+}
 string read_command()
 {
 
@@ -66,6 +94,7 @@ string read_command()
         }
         else if (c[i] == ENTER)
         {
+            break;
         }
         else if (c[i] == TAB)
         {
@@ -76,11 +105,21 @@ string read_command()
             i++;
         }
     }
-    cout << endl;
+    cout<<endl;
     c[i] = '\0';
     string input(c);
 
-    return input;
+    return input.substr(rowlen,i-rowlen);
+}
+vector<Command> process_commands(string shell_i)
+{   vector<Command> cmds;
+    vector<string> tokens=split_string(shell_i,'|');
+    for(int i=0;i<tokens.size();i++){
+        Command cmd;
+        cmd.instructions=split_string(tokens[i],' ');
+        cmds.push_back(cmd);
+    }
+    return cmds;
 }
 
 int main(int argc, char const *argv[])
@@ -88,9 +127,11 @@ int main(int argc, char const *argv[])
 
     enable_shell();
     while (1)
-    {
+    {   string command=read_command();
+        if(command=="quit")
+            break;
+        vector<Command> cmds=process_commands(command);
 
-        cout << read_command();
     }
     return 0;
 }
