@@ -38,6 +38,7 @@ enum KEYS
 };
 
 char path[256];
+string s_path;
 
 void disable_shell()
 {
@@ -79,7 +80,7 @@ string read_command()
 {
 
     char c[100000];
-    int rowlen = snprintf(c, sizeof(c), "\x1b[1m\x1b[34mPOSIX-PARTY : \x1b[0m\x1b[1m\x1b[32m%s $ \x1b[0m", path);
+    int rowlen = snprintf(c, sizeof(c), "\x1b[1m\x1b[34mPOSIX-PARTY : \x1b[0m\x1b[1m\x1b[32m%s $ \x1b[0m", s_path.c_str());
     int i = rowlen;
     cout << c;
     while ((c[i] = getchar()))
@@ -129,6 +130,18 @@ bool pathexists(string pathname)
 {
   struct stat buff;
   return (stat(pathname.c_str(), &buff) == 0);
+}
+
+string display_path(string s){
+    vector<string> tokens = split_string(s, '/');
+    if(tokens.size() <= 3){
+        return s;
+    }
+    string res = "~";
+    for(int i = 3;i<tokens.size();i++){
+        res += "/" + tokens[i];
+    }
+    return res;
 }
 
 string handle_path(string s)
@@ -202,6 +215,7 @@ string handle_path(string s)
 
 void command_handle(vector<Command> cmds){
     int ind = cmds.size()-1;
+    string s = (handle_path(cmds[ind].instructions[1]));
     if(strcmp(cmds[ind].instructions[0].c_str(), "cd") == 0){
         if(cmds[ind].instructions.size() == 1){
             return;
@@ -210,12 +224,13 @@ void command_handle(vector<Command> cmds){
             cout<<"Too many arguments"<<endl;
             return;
         }
-        if(!pathexists(cmds[ind].instructions[1])){
+        if(!pathexists(s)){
             cout<<"No such file or directory"<<endl;
             return;
         }
-        chdir((handle_path(cmds[ind].instructions[1])).c_str());
+        chdir(s.c_str());
         getcwd(path, 256);
+        s_path = display_path(string(path));
     }
 
     else if(strcmp(cmds[ind].instructions[0].c_str(), "pwd") == 0){
@@ -228,6 +243,7 @@ int main(int argc, char const *argv[])
 
     enable_shell();
     getcwd(path, 256);
+    s_path = display_path(string(path));
     while (1)
     {   string command=read_command();
         if(command=="quit")
