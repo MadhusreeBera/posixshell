@@ -42,6 +42,8 @@ void disable_shell()
 }
 void enable_shell()
 {
+    atexit (disable_shell);
+
     struct termios raw = config.orig_termios;
     atexit(disable_shell);
     tcgetattr(STDIN_FILENO, &raw);
@@ -122,16 +124,44 @@ vector<Command> process_commands(string shell_i)
     return cmds;
 }
 
+int start_command (vector <Command> commands){
+    pid_t pid, wpid;
+    int status;
+
+    char* args [commands [0].instructions.size ()+1];
+
+    for (int i=0; i<commands [0].instructions.size (); i++){
+        args [i] = new char [commands [0].instructions [i].length ()];
+        strcpy (args [i], commands[0].instructions [i].c_str ()); 
+    }
+    pid = fork ();
+    args [commands [0].instructions.size ()] = NULL;
+    if (pid == 0){
+        if (execvp (args [0], args) == -1){
+            cerr<<"command failed"<<endl;
+        }
+    } else if (pid < 0){
+        cerr<<"forking error"<<endl;
+    } else if (pid > 0){
+        do {
+            wpid = waitpid (pid, &status, WUNTRACED);
+        } while (!WIFEXITED (status) && !WIFSIGNALED (status));
+    }
+
+    return 1;
+}
+
 int main(int argc, char const *argv[])
 {
 
     enable_shell();
     while (1)
     {   string command=read_command();
-        if(command=="quit")
+        if(command=="exit"){
             break;
+        }
         vector<Command> cmds=process_commands(command);
-
+        start_command (cmds);
     }
     return 0;
 }
