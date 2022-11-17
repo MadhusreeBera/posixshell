@@ -210,6 +210,9 @@ string handle_path(string s)
     {
         x += v[i];
     }
+    if(x == ""){
+        x = "/home";
+    }
     return x;
 }
 
