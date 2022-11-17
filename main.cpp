@@ -215,7 +215,6 @@ string handle_path(string s)
 
 void command_handle(vector<Command> cmds){
     int ind = cmds.size()-1;
-    string s = (handle_path(cmds[ind].instructions[1]));
     if(strcmp(cmds[ind].instructions[0].c_str(), "cd") == 0){
         if(cmds[ind].instructions.size() == 1){
             return;
@@ -224,6 +223,7 @@ void command_handle(vector<Command> cmds){
             cout<<"Too many arguments"<<endl;
             return;
         }
+        string s = (handle_path(cmds[ind].instructions[1]));
         if(!pathexists(s)){
             cout<<"No such file or directory"<<endl;
             return;
