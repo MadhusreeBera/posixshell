@@ -20,6 +20,7 @@
 #include <sys/wait.h>
 #include <fstream>
 #include <sys/stat.h>
+
 using namespace std;
 class Config
 {
@@ -46,6 +47,8 @@ void disable_shell()
 }
 void enable_shell()
 {
+    atexit (disable_shell);
+
     struct termios raw = config.orig_termios;
     atexit(disable_shell);
     tcgetattr(STDIN_FILENO, &raw);
@@ -115,16 +118,6 @@ string read_command()
 
     return input.substr(rowlen,i-rowlen);
 }
-vector<Command> process_commands(string shell_i)
-{   vector<Command> cmds;
-    vector<string> tokens=split_string(shell_i,'|');
-    for(int i=0;i<tokens.size();i++){
-        Command cmd;
-        cmd.instructions=split_string(tokens[i],' ');
-        cmds.push_back(cmd);
-    }
-    return cmds;
-}
 
 bool pathexists(string pathname)
 {
@@ -134,7 +127,7 @@ bool pathexists(string pathname)
 
 string display_path(string s){
     vector<string> tokens = split_string(s, '/');
-    if(tokens.size() <= 3){
+    if(tokens.size() <= 2){
         return s;
     }
     string res = "~";
@@ -142,6 +135,17 @@ string display_path(string s){
         res += "/" + tokens[i];
     }
     return res;
+}
+
+vector<Command> process_commands(string shell_i)
+{   vector<Command> cmds;
+    vector<string> tokens=split_string(shell_i,'|');
+    for(int i=0;i<tokens.size();i++){
+        Command cmd;
+        cmd.instructions=split_string(tokens[i],' ');
+        cmds.push_back(cmd);
+    }
+    return cmds;
 }
 
 string handle_path(string s)
@@ -194,6 +198,9 @@ string handle_path(string s)
 
         if (format[i] == "/..")
         {
+            if(v.empty()){
+                continue;
+            }
             v.pop_back();
         }
         else if (format[i] == "/.")
@@ -211,13 +218,12 @@ string handle_path(string s)
         x += v[i];
     }
     if(x == ""){
-        x = "/home";
+        x = "/";
     }
     return x;
 }
 
-void command_handle(vector<Command> cmds){
-    int ind = cmds.size()-1;
+void path_commands(vector<Command> cmds, int ind){
     if(strcmp(cmds[ind].instructions[0].c_str(), "cd") == 0){
         if(cmds[ind].instructions.size() == 1){
             return;
@@ -241,6 +247,38 @@ void command_handle(vector<Command> cmds){
     }
 }
 
+int start_command (vector <Command> commands){
+    int ind = commands.size()-1;
+    if(strcmp(commands[ind].instructions[0].c_str(), "cd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "cd") == 0){
+        path_commands(commands, ind);
+        return 1;
+    }
+    pid_t pid, wpid;
+    int status;
+
+    char* args [commands [0].instructions.size ()+1];
+
+    for (int i=0; i<commands [0].instructions.size (); i++){
+        args [i] = new char [commands [0].instructions [i].length ()];
+        strcpy (args [i], commands[0].instructions [i].c_str ()); 
+    }
+    pid = fork ();
+    args [commands [0].instructions.size ()] = NULL;
+    if (pid == 0){
+        if (execvp (args [0], args) == -1){
+            cerr<<"command failed"<<endl;
+        }
+    } else if (pid < 0){
+        cerr<<"forking error"<<endl;
+    } else if (pid > 0){
+        do {
+            wpid = waitpid (pid, &status, WUNTRACED);
+        } while (!WIFEXITED (status) && !WIFSIGNALED (status));
+    }
+
+    return 1;
+}
+
 int main(int argc, char const *argv[])
 {
 
@@ -249,10 +287,11 @@ int main(int argc, char const *argv[])
     s_path = display_path(string(path));
     while (1)
     {   string command=read_command();
-        if(command=="quit")
+        if(command=="exit"){
             break;
+        }
         vector<Command> cmds=process_commands(command);
-        command_handle(cmds);
+        start_command (cmds);
     }
     return 0;
 }
