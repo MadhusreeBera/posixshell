@@ -138,12 +138,10 @@ int start_command (vector <Command> commands){
 
         char* args [commands [i].instructions.size ()+1];
 
-        for (int i=0; i<commands [i].instructions.size (); i++){
-            args [i] = new char [commands [i].instructions [i].length ()];
-            strcpy (args [i], commands [i].instructions [i].c_str ()); 
-            cout<<args [i]<<" ";
+        for (int j=0; j<commands [i].instructions.size (); j++){
+            args [j] = new char [commands [i].instructions [j].length ()];
+            strcpy (args [j], commands [i].instructions [j].c_str ()); 
         }
-        cout<<endl;
         args [commands [i].instructions.size ()] = NULL;
 
         pid = fork ();
@@ -186,9 +184,7 @@ int start_command (vector <Command> commands){
     for (int i=0; i<commands [n].instructions.size (); i++){
         args [i] = new char [commands [n].instructions [i].length ()];
         strcpy (args [i], commands [n].instructions [i].c_str ()); 
-        cout<<args [i]<<" ";
     }
-    cout<<endl;
     args [commands [n].instructions.size ()] = NULL;
 
     bool redirectFlag = 0;
