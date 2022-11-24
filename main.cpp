@@ -194,22 +194,24 @@ void enable_shell()
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
 
-void create_myrc(){
+void create_myrc()
+{
     fstream file;
     file.open("myrc.txt", ios::out);
     getcwd(config.myrc_path, 256);
     config.myrc_fullpath = string(config.myrc_path) + "/myrc.txt";
-    file << "PATH=" + string(getenv("PATH"))<<"\n";
-    file << "HOME=" + string(getenv("HOME"))<<"\n";
+    file << "PATH=" + string(getenv("PATH")) << "\n";
+    file << "HOME=" + string(getenv("HOME")) << "\n";
     config.username = string(getenv("USER"));
-    file << "USER=" + config.username<<"\n";
+    file << "USER=" + config.username << "\n";
     char host[1024];
-    memset(host, 0 ,1024);
+    memset(host, 0, 1024);
     gethostname(host, 1024);
     config.hostname = string(host);
-    file << "HOSTNAME=" + config.hostname<<"\n";
+    file << "HOSTNAME=" + config.hostname << "\n";
     config.symbol = "$";
-    file << "PS1=$"<<"\n";
+    file << "PS1=$"
+         << "\n";
 }
 
 vector<string> split_string(string s, char ch)
@@ -240,7 +242,7 @@ string read_command()
 {
 
     string s;
-    s = "\x1b[1m\x1b[34m"+ config.username + "@" + config.hostname +": \x1b[0m\x1b[1m\x1b[32m" + config.path + " "+ config.symbol +" \x1b[0m";
+    s = "\x1b[1m\x1b[34m" + config.username + "@" + config.hostname + ": \x1b[0m\x1b[1m\x1b[32m" + config.s_path + " " + config.symbol + " \x1b[0m";
     cout << s << flush;
     cursor.x = s.length();
     int label = s.length();
@@ -368,13 +370,15 @@ void export_print()
     string x;
     while (file >> x)
     {
-        if(x=="" || x=="\n"){
+        if (x == "" || x == "\n")
+        {
             continue;
         }
         vector<string> var = split_string(x, '=');
         cout << "declare -x " << var[0] << "="
              << "\"" << var[1] << "\"" << endl;
     }
+    file.close();
 }
 
 void export_delete(string del_comm)
@@ -546,12 +550,74 @@ void path_commands(vector<Command> cmds, int ind)
     }
 }
 
+void printmyrc()
+{
+    fstream file;
+    file.open(config.myrc_fullpath.c_str(), ios::in);
+    string x;
+    while (file >> x)
+    {
+        if (x == "" || x == "\n")
+        {
+            continue;
+        }
+        cout << x << endl;
+    }
+    file.close();
+}
+
+void printenv_value(string envar)
+{
+    if (envar == "USER")
+    {
+        cout << config.username << endl;
+    }
+    else if (envar == "HOSTNAME")
+    {
+        cout << config.hostname << endl;
+    }
+    else if (envar == "PS1")
+    {
+        cout << config.symbol << endl;
+    }
+    else
+    {
+        fstream file;
+        file.open(config.myrc_fullpath.c_str(), ios::in);
+        string x;
+        if (envar == "PATH")
+        {
+            file >> x;
+            cout << x << endl;
+        }
+        else if (envar == "HOME")
+        {
+            file >> x;
+            file >> x;
+            cout << x << endl;
+        }
+        file.close();
+    }
+}
+
 int start_command(vector<Command> commands)
 {
     int ind = 0;
-    if (strcmp(commands[ind].instructions[0].c_str(), "cd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "cd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "export") == 0)
+    if (strcmp(commands[ind].instructions[0].c_str(), "cd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "pwd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "export") == 0)
     {
         path_commands(commands, ind);
+        return 1;
+    }
+
+    if (strcmp(commands[ind].instructions[0].c_str(), "env") == 0 && commands[ind].instructions.size() == 1)
+    {
+        printmyrc();
+        return 1;
+    }
+
+    if (strcmp(commands[ind].instructions[0].c_str(), "printenv") == 0 && commands[ind].instructions.size() == 2)
+    {
+        printenv_value(commands[ind].instructions[1]);
         return 1;
     }
 
@@ -599,6 +665,7 @@ void init()
     }
     clear_screen();
     getcwd(config.path, 256);
+    config.s_path = display_path(string(config.path));
     create_myrc();
 }
 
