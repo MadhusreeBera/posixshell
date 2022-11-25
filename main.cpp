@@ -213,7 +213,7 @@ int start_command (vector <Command> commands){
             break;
             case 0:
                 if (strcmp (args [commands [n].instructions.size ()-1], "&") == 0){
-                    // strcpy (args [commands [n].instructions.size ()-1], " ");
+                    args [commands [n].instructions.size ()-1] = NULL;
                 }
                 else {
                     args [commands [n].instructions.size ()-1][commands [n].instructions [commands [n].instructions.size ()-1].length () - 1] = '\0';
