@@ -37,6 +37,8 @@ enum KEYS
     TAB = 0x09
 };
 
+list <int> bg;
+
 void disable_shell()
 {
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &config.orig_termios);
@@ -125,6 +127,16 @@ vector<Command> process_commands(string shell_i)
     return cmds;
 }
 
+void bghandler (int sig){
+    int bgstatus = 0;
+    for (list <int>::iterator bgp = bg.begin (); bgp != bg.end (); bgp++){
+        if (waitpid (*bgp, &bgstatus, WNOHANG)){
+            cout<<*bgp<<" done with status "<<bgstatus<<endl;
+            bg.erase (bgp);
+        }
+    }
+}
+
 int start_command (vector <Command> commands){
     for (int i=0; i<commands.size () - 1; i++){
         pid_t pid, wpid;
@@ -188,8 +200,34 @@ int start_command (vector <Command> commands){
     args [commands [n].instructions.size ()] = NULL;
 
     bool redirectFlag = 0;
+    bool isBg = 0;
 
-    if (args [1] != NULL){
+    if (strcmp (args [commands [n].instructions.size ()-1], "&") == 0 || args [commands [n].instructions.size ()-1][commands [n].instructions [commands [n].instructions.size ()-1].length () - 1] == '&'){
+        isBg = 1;
+        signal (SIGCHLD, bghandler);
+        pid_t pid = fork ();
+
+        switch (pid){
+            case -1:
+                cerr<<"fork failed"<<endl;
+            break;
+            case 0:
+                if (strcmp (args [commands [n].instructions.size ()-1], "&") == 0){
+                    // strcpy (args [commands [n].instructions.size ()-1], " ");
+                }
+                else {
+                    args [commands [n].instructions.size ()-1][commands [n].instructions [commands [n].instructions.size ()-1].length () - 1] = '\0';
+                }
+                if (execvp(args[0], args) == -1)
+                    cerr<<"command failed";
+            break;
+        }
+        bg.push_back (pid);
+        setpgid (pid, 0);
+        cout<<bg.size ()<<" "<<pid<<endl;
+    }
+
+    if (&isBg && args [1] != NULL){
         int index;
         for (int i = 0; i<commands [n].instructions.size (); i++){
             if (strcmp (args [i], ">") == 0 || strcmp (args [i], ">>") == 0){
@@ -214,7 +252,7 @@ int start_command (vector <Command> commands){
         }
     }
 
-    if (!redirectFlag){
+    if (!isBg && !redirectFlag){
         if (execvp (args [0], args) == -1){
             cerr<<"command failed"<<endl;
         }
@@ -230,7 +268,8 @@ int main(int argc, char const *argv[])
 
     enable_shell();
     while (1)
-    {   string command=read_command();
+    {
+        string command=read_command();
         if(command=="exit"){
             break;
         }
