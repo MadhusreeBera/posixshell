@@ -20,6 +20,7 @@
 #include <sys/wait.h>
 #include <fstream>
 #include <sys/stat.h>
+#include <map>
 
 #define RESET "\033[0m"
 #define BLACK "\033[30m"              /* Black */
@@ -65,6 +66,8 @@ public:
     string HOME = string(getenv("HOME"));
     char myrc_path[256];
     string myrc_fullpath;
+    int ex_status = 0;
+    map<string, string>alias;
 } config;
 
 class cursor
@@ -512,33 +515,39 @@ void path_commands(vector<Command> cmds, int ind)
     {
         if (cmds[ind].instructions.size() == 1)
         {
+            config.ex_status = 0;
             return;
         }
         if (cmds[ind].instructions.size() > 2)
         {
             cout << "Too many arguments" << endl;
+            config.ex_status = 1;
             return;
         }
         string s = (handle_path(cmds[ind].instructions[1]));
         if (!pathexists(s))
         {
             cout << "No such file or directory" << endl;
+            config.ex_status = 1;
             return;
         }
         chdir(s.c_str());
         getcwd(config.path, 256);
+        config.ex_status = 0;
         config.s_path = display_path(string(config.path));
     }
 
     else if (strcmp(cmds[ind].instructions[0].c_str(), "pwd") == 0)
     {
         cout << config.path << endl;
+        config.ex_status = 0;
     }
     else
     {
         if (cmds[ind].instructions.size() == 1 || (cmds[ind].instructions.size() == 2 && strcmp(cmds[ind].instructions[1].c_str(), "-p")))
         {
             export_print();
+            config.ex_status = 0;
         }
         // else if (cmds[ind].instructions.size() == 3)
         // {
@@ -566,8 +575,9 @@ void printmyrc()
     file.close();
 }
 
-void printenv_value(string envar)
+int printenv_value(string envar)
 {
+    int stat = 0;
     if (envar == "USER")
     {
         cout << config.username << endl;
@@ -596,13 +606,98 @@ void printenv_value(string envar)
             file >> x;
             cout << x << endl;
         }
+        else{
+            stat = 1;
+        }
         file.close();
+    }
+    return stat;
+}
+
+void handle_echo(vector<Command>commands, int ind){
+    for(int i = 1;i < commands[ind].instructions.size(); i++){
+            for(int j = 0;j<commands[ind].instructions[i].length();j++){
+                if(commands[ind].instructions[i][j] == '$'){
+                    if(commands[ind].instructions[i][j+1]){
+                        if(commands[ind].instructions[i][j+1] == '$'){
+                            cout<<getpid();
+                            j++;
+                            continue;
+                        }
+                        else if(commands[ind].instructions[i][j+1] == '?'){
+                            cout<<config.ex_status;
+                            j++;
+                            continue;
+                        }
+                    }
+                }
+                cout<<commands[ind].instructions[i][j];
+            }
+            cout<<" ";
+        }
+        cout<<endl;
+        config.ex_status = 0;
+}
+
+void handle_alias(vector<Command>commands, int ind){
+    int len = commands[ind].instructions.size();
+    if(len == 1){
+        for(auto i : config.alias){
+            cout<<"alias "+ i.first+"="+"\'"+i.second+"\'"<<endl;
+        }
+        config.ex_status = 0;
+            return;
+    }
+    else{
+        int j;
+            string al_name = "", al_comm = "";
+            for(j=0; j < commands[ind].instructions[1].length();j++){
+                if(commands[ind].instructions[1][j] != '='){
+                    al_name += commands[ind].instructions[1][j];
+                }
+                else{
+                    break;
+                }
+        }
+        j += 2;
+        while(commands[ind].instructions[1][j]){
+            al_comm += commands[ind].instructions[1][j];
+            j++;
+        }
+        if(al_comm != ""){
+            al_comm += " ";
+        }
+        for(int i = 2;i < len-1; i++){
+            al_comm += commands[ind].instructions[i]+ " ";
+        }
+
+        j=0;
+        if(commands[ind].instructions[len - 1].length() != 1){
+            while(j < commands[ind].instructions[len - 1].length() - 1){
+                al_comm += commands[ind].instructions[len - 1][j];
+                j++;
+            }
+        }
+        cout<<al_name<<endl;
+        cout<<al_comm<<endl;
+        config.alias[al_name] = al_comm;
+        config.ex_status = 0;
     }
 }
 
 int start_command(vector<Command> commands)
 {
     int ind = 0;
+    auto search = config.alias.find(commands[ind].instructions[0]);
+    if(search != config.alias.end()){
+        if(search->second == "exit"){
+            exit(EXIT_SUCCESS);
+        }
+        vector<Command> cmds = process_commands(search->second);
+        start_command(cmds);
+        return 1;
+    }
+    
     if (strcmp(commands[ind].instructions[0].c_str(), "cd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "pwd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "export") == 0)
     {
         path_commands(commands, ind);
@@ -612,12 +707,28 @@ int start_command(vector<Command> commands)
     if (strcmp(commands[ind].instructions[0].c_str(), "env") == 0 && commands[ind].instructions.size() == 1)
     {
         printmyrc();
+        config.ex_status = 0;
         return 1;
     }
 
     if (strcmp(commands[ind].instructions[0].c_str(), "printenv") == 0 && commands[ind].instructions.size() == 2)
     {
-        printenv_value(commands[ind].instructions[1]);
+        if(printenv_value(commands[ind].instructions[1])){
+            config.ex_status = 1;
+        }
+        else{
+            config.ex_status = 0;
+        }
+        return 1;
+    }
+
+    if (strcmp(commands[ind].instructions[0].c_str(), "echo") == 0){
+        handle_echo(commands, ind);
+        return 1;
+    }
+
+    if (strcmp(commands[ind].instructions[0].c_str(), "alias") == 0){
+        handle_alias(commands, ind);
         return 1;
     }
 
@@ -638,6 +749,7 @@ int start_command(vector<Command> commands)
         if (execvp(args[0], args) == -1)
         {
             cerr << "command failed" << endl;
+            config.ex_status = 127;
         }
     }
     else if (pid < 0)
@@ -650,6 +762,12 @@ int start_command(vector<Command> commands)
         {
             wpid = waitpid(pid, &status, WUNTRACED);
         } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+
+        if ( WIFEXITED(status) )
+    {
+        int exit_status = WEXITSTATUS(status);       
+        config.ex_status = exit_status;
+    }
     }
 
     return 1;
