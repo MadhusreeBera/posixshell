@@ -19,6 +19,8 @@
 #include <sstream>
 #include <sys/wait.h>
 #include <fstream>
+#include <dirent.h>
+#include <fcntl.h>
 
 #define RESET "\033[0m"
 #define BLACK "\033[30m"              /* Black */
@@ -53,6 +55,150 @@
 #define all(x) (x).begin(), (x).end()
 
 using namespace std;
+class Node
+{
+public:
+    char ch;
+    Node *parent;
+    Node *next[257];
+    Node()
+    {
+        parent = NULL;
+        for (int i = 0; i < 27; i++)
+        {
+            next[i] = NULL;
+        }
+    }
+    Node(char ch)
+    {
+        this->ch = ch;
+        for (int i = 0; i < 27; i++)
+        {
+            next[i] = NULL;
+        }
+    }
+};
+list<int> bg;
+class Trie
+{
+public:
+    Node *root;
+    Node *end;
+    ofstream trie_logger;
+    Trie()
+    {
+        root = new Node('/');
+        end = new Node('$');
+    }
+    void initialize_trie()
+    {
+        trie_logger.open("trie_logger.txt");
+        trie_logger << "Initializing trie" << endl;
+
+        DIR *dir = opendir("/bin/");
+        trie_logger << "accessing files" << endl;
+        if (dir == NULL)
+        {
+            trie_logger << "not open" << endl;
+            exit(1);
+        }
+        struct dirent *entity;
+        entity = readdir(dir);
+        trie_logger << "printing files" << endl;
+
+        while (entity != NULL)
+        {
+
+            string command_name = string(entity->d_name);
+            // command_name = entity->d_name;
+            if (command_name == "." || command_name == "..")
+            {
+                entity = readdir(dir);
+
+                continue;
+            }
+
+            insert(command_name);
+            // trie_logger << command_name << endl;
+
+            entity = readdir(dir);
+        }
+        closedir(dir);
+    }
+    void insert(string st)
+    {
+        Node *cur = root;
+        int n = st.length();
+        for (int i = 0; i < n; i++)
+        {
+            int index = int(st[i]);
+            if (cur->next[index] == NULL)
+            {
+                Node *temp = new Node(st[i]);
+                temp->parent = cur;
+                cur->next[index] = temp;
+                cur = temp;
+            }
+            else
+            {
+                cur = cur->next[index];
+            }
+        }
+        cur->next[256] = end;
+    }
+    int find(string st)
+    {
+        Node *cur = root;
+        for (int i = 0; i < st.length(); i++)
+        {
+            int index = int(st[i]);
+
+            if (cur->next[index] == NULL)
+                return 0;
+            cur = cur->next[index];
+        }
+        if (cur->next[256] == NULL) // string did not end
+            return 0;
+        return 1;
+    }
+    void getWords(Node *cur, string prefix, vector<string> &wordList)
+    {
+        if (cur == end)
+        {
+            wordList.push_back(prefix);
+            return;
+        }
+        for (int i = 0; i < 257; i++)
+        {
+            if (cur->next[i] != NULL)
+            {
+                getWords(cur->next[i], prefix + cur->ch, wordList);
+            }
+        }
+    }
+    vector<string> auto_complete(string prefix)
+    {
+        Node *cur = root;
+        vector<string> wordList;
+        for (int i = 0; i < prefix.length(); i++)
+        {
+            int index = int(prefix[i]);
+            if (cur->next[index] == NULL)
+            {
+                // cout << -1 << endl;
+                return wordList;
+            }
+            else
+            {
+                cur = cur->next[index];
+            }
+        }
+        prefix.pop_back();
+        getWords(cur, prefix, wordList);
+        // cout << wordList.size() << endl;
+        return wordList;
+    }
+} * trie;
 class Config
 {
 public:
@@ -66,8 +212,8 @@ class cursor
 public:
     int win_x = 0;
     int win_y = 0;
-    int x = 0;
-    int y = 0;
+    int x = 1;
+    int y = 1;
 } cursor;
 class Command
 {
@@ -83,7 +229,7 @@ enum KEYS
     RIGHT = 67,
     BACK_SPACE = 127,
     HOME = 104,
-    HOME1 = 72,
+    TAB = 9,
     COLON = 58,
     ESC = 27,
     q = 113,
@@ -104,6 +250,7 @@ void disable_shell()
 {
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &config.orig_termios) != 0)
     {
+        exit(EXIT_FAILURE);
     };
 }
 void ctrl_c(int signum)
@@ -181,9 +328,8 @@ int getWindowSize(int *rows, int *cols)
 
 void enable_shell()
 {
+    tcgetattr(STDIN_FILENO, &config.orig_termios);
     struct termios raw = config.orig_termios;
-    atexit(disable_shell);
-    tcgetattr(STDIN_FILENO, &raw);
     raw.c_lflag &= ~(ICANON);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
 }
@@ -211,12 +357,13 @@ string getParent_dir(string s)
     }
     return ret;
 }
-string read_command()
+string read_command(bool* exec)
 {
-    
+    set_cursor_position(cursor.win_y - 1, 1);
     string s;
     s = "\x1b[1m\x1b[34mPOSIX-PARTY : \x1b[0m\x1b[1m\x1b[32m" + config.HOME + "$ \x1b[0m";
-    cout << s << flush;
+    cout << '\n'
+         << s << flush;
     cursor.x = s.length();
     int label = s.length();
     while (1)
@@ -230,16 +377,18 @@ string read_command()
                 if (!s.empty() && cursor.x > label)
                 {
                     clearLineMacro();
-                    set_cursor_position(cursor.y, 0);
+                    set_cursor_position(cursor.win_y - 1, 1);
                     s.pop_back();
                     cursor.x--;
-                    cout << s << flush;
+                    cout << '\n'
+                         << s << flush;
                 }
                 else
                 {
                     clearLineMacro();
-                    set_cursor_position(cursor.y, 0);
-                    cout << s << flush;
+                    set_cursor_position(cursor.win_y - 1, 1);
+                    cout << '\n'
+                         << s << flush;
                 }
             }
             else if (int(key[0]) == 27)
@@ -250,9 +399,31 @@ string read_command()
 
                     if (int(key[2]) == RIGHT)
                     {
+                        clearLineMacro();
+                        set_cursor_position(cursor.win_y - 1, 1);
+                        cout << '\n'
+                             << s << flush;
                     }
                     else if (int(key[2]) == LEFT)
                     {
+                        clearLineMacro();
+                        set_cursor_position(cursor.win_y - 1, 1);
+                        cout << '\n'
+                             << s << flush;
+                    }
+                    else if (int(key[2]) == UP)
+                    {
+                        clearLineMacro();
+                        set_cursor_position(cursor.win_y - 1, 1);
+                        cout << '\n'
+                             << s << flush;
+                    }
+                    else if (int(key[2]) == DOWN)
+                    {
+                        clearLineMacro();
+                        set_cursor_position(cursor.win_y - 1, 1);
+                        cout << '\n'
+                             << s << flush;
                     }
                 }
             }
@@ -260,6 +431,55 @@ string read_command()
             {
                 cursor.y++;
                 break;
+            }
+            else if (int(key[0]) == TAB)
+            {
+                string prefix = "";
+                int k;
+                for (k = label; k < cursor.x; k++)
+                {
+                    prefix += s[k];
+                }
+                int prefix_len = prefix.length();
+                vector<string> commandList = trie->auto_complete(prefix);
+                clearLineMacro();
+                set_cursor_position(cursor.win_y - 1, 1);
+                cout << '\n'
+                     << s << flush;
+                if (commandList.size() == 1)
+                {
+
+                    for (int j = prefix_len; j < commandList[0].length(); j++)
+                    {
+                        s += commandList[0][j];
+                        cursor.x++;
+                    }
+                    clearLineMacro();
+                    set_cursor_position(cursor.win_y - 1, 1);
+                    cout << '\n'
+                         << s << flush;
+                }
+                else if (commandList.size() > 1)
+                {
+                    cout << endl;
+                    int count = 0;
+                    cursor.y++;
+                    for (auto ele : commandList)
+                    {
+
+                        cout << left << setw(30) << ele;
+                        count++;
+                        if (count % 4 == 0)
+                        {
+                            cursor.y++;
+                            cout << endl;
+                        }
+                    }
+                    cursor.y++;
+                    cout << endl;
+                    *exec= false;
+                    break;
+                }
             }
         }
         else
@@ -269,8 +489,7 @@ string read_command()
         }
     }
 
-
-    return s.substr(label,cursor.x-label);
+    return s.substr(label, cursor.x - label);
 }
 vector<Command> process_commands(string shell_i)
 {
@@ -335,6 +554,18 @@ void handler(int sig)
 
     return;
 }
+void print_alarm(string message, int seconds)
+{
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        sleep(seconds);
+        cout << message << endl;
+
+        exit(EXIT_SUCCESS);
+    }
+}
+
 void clear_screen()
 {
 
@@ -344,12 +575,185 @@ void clear_screen()
 void init()
 {
     enable_shell();
+    atexit(disable_shell);
     if (getWindowSize(&cursor.win_y, &cursor.win_x) == -1)
     {
         cout << "No Window size available" << endl;
         return;
     }
+    trie = new Trie();
+    trie->initialize_trie();
     clear_screen();
+}
+void bghandler(int sig)
+{
+    int bgstatus = 0;
+    for (list<int>::iterator bgp = bg.begin(); bgp != bg.end(); bgp++)
+    {
+        if (waitpid(*bgp, &bgstatus, WNOHANG))
+        {
+            cout << *bgp << " done with status " << bgstatus << endl;
+            bg.erase(bgp);
+        }
+    }
+}
+void check_builinCommands(string command)
+{
+    if (command == "exit")
+    {
+        exit(EXIT_SUCCESS);
+    }
+    else if (command == "clear")
+    {
+        clear_screen();
+    }
+}
+int start_command(vector<Command> commands)
+{
+    for (int i = 0; i < commands.size() - 1; i++)
+    {
+        pid_t pid, wpid;
+        int status;
+
+        int pd[2];
+
+        if (pipe(pd) < 0)
+        {
+            cerr << "pipe failed" << endl;
+        }
+
+        char *args[commands[i].instructions.size() + 1];
+
+        for (int j = 0; j < commands[i].instructions.size(); j++)
+        {
+            args[j] = new char[commands[i].instructions[j].length()];
+            strcpy(args[j], commands[i].instructions[j].c_str());
+        }
+        args[commands[i].instructions.size()] = NULL;
+
+        pid = fork();
+
+        switch (pid)
+        {
+        case -1:
+            cerr << "fork failed" << endl;
+            break;
+
+        case 0:
+            dup2(pd[1], 1);
+            close(pd[0]);
+            close(pd[1]);
+
+            if (execvp(args[0], args) == -1)
+            {
+                cerr << "command failed" << endl;
+            }
+            for (int i = 0; i < commands[i].instructions.size() + 1; i++)
+                delete (args[i]);
+            break;
+
+        default:
+            do
+            {
+                wpid = waitpid(pid, &status, WUNTRACED);
+            } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+            break;
+        }
+
+        dup2(pd[0], 0);
+        close(pd[1]);
+        close(pd[0]);
+    }
+
+    pid_t pid, wpid;
+    int status;
+    int n = commands.size() - 1;
+
+    char *args[commands[n].instructions.size() + 1];
+
+    for (int i = 0; i < commands[n].instructions.size(); i++)
+    {
+        args[i] = new char[commands[n].instructions[i].length()];
+        strcpy(args[i], commands[n].instructions[i].c_str());
+    }
+    args[commands[n].instructions.size()] = NULL;
+
+    bool redirectFlag = 0;
+    bool isBg = 0;
+
+    if (strcmp(args[commands[n].instructions.size() - 1], "&") == 0 || args[commands[n].instructions.size() - 1][commands[n].instructions[commands[n].instructions.size() - 1].length() - 1] == '&')
+    {
+        isBg = 1;
+        signal(SIGCHLD, bghandler);
+        pid_t pid = fork();
+
+        switch (pid)
+        {
+        case -1:
+            cerr << "fork failed" << endl;
+            break;
+        case 0:
+            if (strcmp(args[commands[n].instructions.size() - 1], "&") == 0)
+            {
+                args[commands[n].instructions.size() - 1] = NULL;
+            }
+            else
+            {
+                args[commands[n].instructions.size() - 1][commands[n].instructions[commands[n].instructions.size() - 1].length() - 1] = '\0';
+            }
+            if (execvp(args[0], args) == -1)
+                cerr << "command failed";
+
+            break;
+        }
+        bg.push_back(pid);
+        setpgid(pid, 0);
+        cout << bg.size() << " " << pid << endl;
+    }
+
+    if (&isBg && args[1] != NULL)
+    {
+        int index;
+        for (int i = 0; i < commands[n].instructions.size(); i++)
+        {
+            if (strcmp(args[i], ">") == 0 || strcmp(args[i], ">>") == 0)
+            {
+                index = i;
+                redirectFlag = 1;
+                break;
+            }
+        }
+
+        if (redirectFlag)
+        {
+            int fd;
+            if (strcmp(args[index], ">") == 0)
+            {
+                fd = open(args[index + 1], O_CREAT | O_WRONLY | O_TRUNC, 0644);
+            }
+            else
+            {
+                fd = open(args[index + 1], O_CREAT | O_WRONLY | O_APPEND, 0644);
+            }
+            dup2(fd, 1);
+            args[index] = 0;
+            if (execvp(args[0], args) == -1)
+                cerr << "command failed";
+            close(fd);
+        }
+    }
+
+    if (!isBg && !redirectFlag)
+    {
+        if (execvp(args[0], args) == -1)
+        {
+            cerr << "command failed" << endl;
+        }
+        for (int i = 0; i < commands[n].instructions.size() + 1; i++)
+            delete (args[i]);
+    }
+
+    return 1;
 }
 int main(int argc, char const *argv[])
 {
@@ -358,14 +762,38 @@ int main(int argc, char const *argv[])
     signal(SIGINT, ctrl_c);
     /* signal(SIGCHLD, handler); */
     while (1)
-    {
-        string command = read_command();
+    {   bool exec=true;
+        string command = read_command(&exec);
         if (command == "exit")
         {
             exit(EXIT_SUCCESS);
+            return 0;
         }
+        if (!command.empty()&&exec)
+        {
+            vector<Command> cmds = process_commands(command);
 
-        vector<Command> cmds = process_commands(command);
+            pid_t pid = fork();
+            pid_t wpid;
+            int status = 0;
+
+            switch (pid)
+            {
+            case -1:
+                cerr << "fork error" << endl;
+                break;
+
+            case 0:
+                start_command(cmds);
+
+            default:
+                do
+                {
+                    wpid = waitpid(pid, &status, WUNTRACED);
+                } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+                break;
+            }
+        }
     }
     return 0;
 }
