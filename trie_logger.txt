@@ -1,3 +1,0 @@
-Initializing trie
-accessing files
-printing files
