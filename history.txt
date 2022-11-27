@@ -1,0 +1,47 @@
+1	ls
+2	ls -la
+3	history
+4	exit
+5	ll
+6	ls
+7	ls -la
+8	exit
+9	ls
+10	history
+11	exit
+12	ls
+13	ll
+14	ls -la
+15	exit
+16	ll
+17	ls -la
+18	ls
+19	ll
+20	ls -la
+21	exit
+22	ls
+23	exit
+24	ls -la
+25	ll
+26	ll
+27	exit
+28	history
+29	exit
+30	ll
+31	exit
+31	etrd
+32	etd
+34	ls
+35	ls -la
+36	mkdir newforlder
+37	ls
+38	exit
+39	ll
+40	ll
+41	exit
+42	ll
+43	exit
+44	ls
+45	ll
+46	ll
+47	exit

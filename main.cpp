@@ -55,6 +55,7 @@
 #define all(x) (x).begin(), (x).end()
 
 using namespace std;
+
 class Node
 {
 public:
@@ -198,6 +199,13 @@ public:
         // cout << wordList.size() << endl;
         return wordList;
     }
+    void insert_suffix(string st)
+    {
+        for (int i = 0; i < st.length(); i++)
+        {
+            insert(st.substr(i));
+        }
+    }
 } * trie;
 class Config
 {
@@ -235,6 +243,76 @@ enum KEYS
     q = 113,
     Q = 81
 };
+class History
+{
+public:
+    ofstream history_logger;
+    int HISTSIZE, no_of_commands;
+    History()
+    {
+        history_logger.open("history.txt", ios_base::app);
+        // read HISTSIZE from myrc
+
+        HISTSIZE = 100;
+        no_of_commands = 0;
+
+        ifstream history_if;
+        history_if.open("history.txt");
+        string line;
+        while (std::getline(history_if, line))
+            ++no_of_commands;
+    }
+    void insert(string command)
+    {
+        if (command == "")
+            return;
+        if (no_of_commands < HISTSIZE)
+        {
+            string line = to_string(++no_of_commands) + "\t" + command;
+            history_logger << line << endl;
+        }
+    }
+    void print_history()
+    {
+        ifstream history_input_stream;
+        history_input_stream.open("history.txt");
+        if (history_input_stream.fail())
+        {
+            perror("Failed to load history: ");
+            return;
+        }
+        string line, line_number;
+        for (std::string line; getline(history_input_stream, line);)
+        {
+            cout << line << endl;
+        }
+        history_input_stream.close();
+    }
+
+    void search_history_file(string key)
+    {
+        ifstream history_input_stream;
+        history_input_stream.open("history.txt");
+        if (history_input_stream.fail())
+        {
+            perror("Failed to open history: ");
+            return;
+        }
+        string line, line_number;
+        for (std::string line; getline(history_input_stream, line);)
+        {
+            // cout << line << endl;
+            Trie *line_trie = new Trie();
+            line_trie->insert_suffix(line);
+            vector<string> searchResult = line_trie->auto_complete(key);
+            if (searchResult.size() > 0)
+            {
+                cout << line << endl;
+            }
+        }
+        history_input_stream.close();
+    }
+} * history;
 bool set_cursor_position(int row, int col)
 {
     char buf[64];
@@ -488,7 +566,7 @@ string read_command(bool* exec)
             cursor.x++;
         }
     }
-
+    
     return s.substr(label, cursor.x - label);
 }
 vector<Command> process_commands(string shell_i)
@@ -584,6 +662,7 @@ void init()
     trie = new Trie();
     trie->initialize_trie();
     clear_screen();
+    history = new History();
 }
 void bghandler(int sig)
 {
@@ -619,7 +698,7 @@ int start_command(vector<Command> commands)
 
         if (pipe(pd) < 0)
         {
-            cerr << "pipe failed" << endl;
+            cout << "pipe failed" << endl;
         }
 
         char *args[commands[i].instructions.size() + 1];
@@ -636,7 +715,7 @@ int start_command(vector<Command> commands)
         switch (pid)
         {
         case -1:
-            cerr << "fork failed" << endl;
+            cout << "fork failed" << endl;
             break;
 
         case 0:
@@ -646,7 +725,8 @@ int start_command(vector<Command> commands)
 
             if (execvp(args[0], args) == -1)
             {
-                cerr << "command failed" << endl;
+                cout << "command failed" << endl;
+                _exit(EXIT_FAILURE);
             }
             for (int i = 0; i < commands[i].instructions.size() + 1; i++)
                 delete (args[i]);
@@ -690,7 +770,7 @@ int start_command(vector<Command> commands)
         switch (pid)
         {
         case -1:
-            cerr << "fork failed" << endl;
+            cout << "fork failed" << endl;
             break;
         case 0:
             if (strcmp(args[commands[n].instructions.size() - 1], "&") == 0)
@@ -701,9 +781,10 @@ int start_command(vector<Command> commands)
             {
                 args[commands[n].instructions.size() - 1][commands[n].instructions[commands[n].instructions.size() - 1].length() - 1] = '\0';
             }
-            if (execvp(args[0], args) == -1)
-                cerr << "command failed";
-
+            if (execvp(args[0], args) == -1){
+                cout << "command failed"<<flush;
+                _exit(EXIT_FAILURE);
+            }
             break;
         }
         bg.push_back(pid);
@@ -737,8 +818,10 @@ int start_command(vector<Command> commands)
             }
             dup2(fd, 1);
             args[index] = 0;
-            if (execvp(args[0], args) == -1)
-                cerr << "command failed";
+            if (execvp(args[0], args) == -1){
+                cout << "command failed"<<flush;
+                _exit(EXIT_FAILURE);
+            }
             close(fd);
         }
     }
@@ -747,7 +830,8 @@ int start_command(vector<Command> commands)
     {
         if (execvp(args[0], args) == -1)
         {
-            cerr << "command failed" << endl;
+            cout << "command failed" << endl;
+            _exit(EXIT_FAILURE);
         }
         for (int i = 0; i < commands[n].instructions.size() + 1; i++)
             delete (args[i]);
@@ -764,10 +848,22 @@ int main(int argc, char const *argv[])
     while (1)
     {   bool exec=true;
         string command = read_command(&exec);
+        history->insert(command);
         if (command == "exit")
         {
             exit(EXIT_SUCCESS);
             return 0;
+        }
+         if (command == "history")
+        {
+            history->print_history();
+            continue;
+        }
+        if (command.substr(0, 8) == "history " && command.length() > 8)
+        {
+            string keyword = command.substr(8, command.length() - 8);
+            history->search_history_file(keyword);
+            continue;
         }
         if (!command.empty()&&exec)
         {
@@ -780,11 +876,12 @@ int main(int argc, char const *argv[])
             switch (pid)
             {
             case -1:
-                cerr << "fork error" << endl;
+                cout << "fork error" << endl;
                 break;
 
             case 0:
                 start_command(cmds);
+                break;
 
             default:
                 do
