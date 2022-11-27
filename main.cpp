@@ -21,6 +21,8 @@
 #include <fstream>
 #include <dirent.h>
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <map>
 
 #define RESET "\033[0m"
 #define BLACK "\033[30m"              /* Black */
@@ -212,7 +214,15 @@ class Config
 public:
     struct termios orig_termios;
     int shell_id;
+    char path[256];
+    string s_path;
+    string username, hostname, symbol;
     string HOME = string(getenv("HOME"));
+    string myrc_fullpath;
+    int ex_status = 0;
+    map<string, string> alias;
+    string myrc_info = "";
+    char myrc_path[256];
 } config;
 
 class cursor
@@ -403,7 +413,30 @@ int getWindowSize(int *rows, int *cols)
         return 0;
     }
 }
-
+void create_myrc()
+{
+    fstream file;
+    file.open("myrc.txt", ios::out);
+    getcwd(config.myrc_path, 256);
+    config.myrc_fullpath = string(config.myrc_path) + "/myrc.txt";
+    file << "PATH=" + string(getenv("PATH")) << "\n";
+    config.myrc_info += "PATH=" + string(getenv("PATH")) + "\n";
+    file << "HOME=" + string(getenv("HOME")) << "\n";
+    config.myrc_info += "HOME=" + string(getenv("HOME")) + "\n";
+    config.username = string(getenv("USER"));
+    file << "USER=" + config.username << "\n";
+    config.myrc_info += "USER=" + config.username + "\n";
+    char host[1024];
+    memset(host, 0, 1024);
+    gethostname(host, 1024);
+    config.hostname = string(host);
+    file << "HOSTNAME=" + config.hostname << "\n";
+    config.myrc_info += "HOSTNAME=" + config.hostname + "\n";
+    config.symbol = "$";
+    file << "PS1=$"
+         << "\n";
+    config.myrc_info += "PS1=$\n";
+}
 void enable_shell()
 {
     tcgetattr(STDIN_FILENO, &config.orig_termios);
@@ -435,11 +468,11 @@ string getParent_dir(string s)
     }
     return ret;
 }
-string read_command(bool* exec)
+string read_command(bool *exec)
 {
     set_cursor_position(cursor.win_y - 1, 1);
     string s;
-    s = "\x1b[1m\x1b[34mPOSIX-PARTY : \x1b[0m\x1b[1m\x1b[32m" + config.HOME + "$ \x1b[0m";
+    s = BOLDRED + config.username + "@" + config.hostname + ": \x1b[0m"+BOLDYELLOW + config.s_path + " " + config.symbol + " \x1b[0m";
     cout << '\n'
          << s << flush;
     cursor.x = s.length();
@@ -555,7 +588,7 @@ string read_command(bool* exec)
                     }
                     cursor.y++;
                     cout << endl;
-                    *exec= false;
+                    *exec = false;
                     break;
                 }
             }
@@ -566,7 +599,7 @@ string read_command(bool* exec)
             cursor.x++;
         }
     }
-    
+
     return s.substr(label, cursor.x - label);
 }
 vector<Command> process_commands(string shell_i)
@@ -650,6 +683,352 @@ void clear_screen()
     write(STDOUT_FILENO, "\x1b[H", 3);
     write(STDOUT_FILENO, "\x1b[2J", 4);
 }
+void export_print()
+{
+    fstream file;
+    file.open(config.myrc_fullpath.c_str(), ios::in);
+    string x;
+    while (file >> x)
+    {
+        if (x == "" || x == "\n")
+        {
+            continue;
+        }
+        vector<string> var = split_string(x, '=');
+        cout << "declare -x " << var[0] << "="
+             << "\"" << var[1] << "\"" << endl;
+    }
+    file.close();
+}
+void export_delete(string del_comm)
+{
+    string line;
+    ifstream fin;
+    fin.open(config.myrc_fullpath.c_str());
+    ofstream temp;
+    string tempfile = string(config.myrc_path) + "/temp.txt";
+    temp.open(tempfile.c_str());
+    while (getline(fin, line))
+    {
+        if (line == "" || line == "\n")
+        {
+            continue;
+        }
+        vector<string> var = split_string(line, '=');
+        if (strcmp(var[0].c_str(), del_comm.c_str()) == 0)
+        {
+            continue;
+        }
+        temp << line << endl;
+    }
+    temp.close();
+    fin.close();
+    remove(config.myrc_fullpath.c_str());
+    rename(tempfile.c_str(), config.myrc_fullpath.c_str());
+}
+bool pathexists(string pathname)
+{
+    struct stat buff;
+    return (stat(pathname.c_str(), &buff) == 0);
+}
+string display_path(string s)
+{
+    vector<string> tokens = split_string(s, '/');
+    if (tokens.size() <= 2)
+    {
+        return s;
+    }
+    string res = "~";
+    for (int i = 3; i < tokens.size(); i++)
+    {
+        res += "/" + tokens[i];
+    }
+    return res;
+}
+
+string handle_path(string s)
+{
+    vector<string> tokens = split_string(s, '/');
+    string dir;
+    vector<string> format;
+    if (tokens[0] == "~")
+    {
+        dir = getenv("HOME");
+        for (int i = 1; i < tokens.size(); i++)
+        {
+            dir += "/" + tokens[i];
+        }
+    }
+    else if (tokens[0] == ".")
+    {
+        dir = getcwd(config.path, 256);
+        for (int i = 1; i < tokens.size(); i++)
+        {
+            dir += "/" + tokens[i];
+        }
+    }
+    else if (tokens[0] == "..")
+    {
+        dir = getParent_dir(getcwd(config.path, 256));
+        for (int i = 1; i < tokens.size(); i++)
+        {
+            dir += "/" + tokens[i];
+        }
+    }
+    else
+    {
+        if (s[0] == '/')
+            dir = s;
+        else
+            dir = string(getcwd(config.path, 256)) + "/" + s;
+    }
+    if (!dir.empty())
+    {
+        vector<string> new_tokens = split_string(dir, '/');
+        for (int i = 1; i < new_tokens.size(); i++)
+        {
+            format.push_back("/" + new_tokens[i]);
+        }
+    }
+    vector<string> v;
+    for (int i = 0; i < format.size(); i++)
+    {
+
+        if (format[i] == "/..")
+        {
+            if (v.empty())
+            {
+                continue;
+            }
+            v.pop_back();
+        }
+        else if (format[i] == "/.")
+        {
+            continue;
+        }
+        else
+        {
+            v.push_back(format[i]);
+        }
+    }
+    string x;
+    for (int i = 0; i < v.size(); i++)
+    {
+        x += v[i];
+    }
+    if (x == "")
+    {
+        x = "/";
+    }
+    return x;
+}
+void path_commands(vector<Command> cmds, int ind)
+{
+    if (strcmp(cmds[ind].instructions[0].c_str(), "cd") == 0)
+    {
+        if (cmds[ind].instructions.size() == 1)
+        {
+            config.ex_status = 0;
+            return;
+        }
+        if (cmds[ind].instructions.size() > 2)
+        {
+            cout << "Too many arguments" << endl;
+            config.ex_status = 1;
+            return;
+        }
+        string s = (handle_path(cmds[ind].instructions[1]));
+        if (!pathexists(s))
+        {
+            cout << "No such file or directory" << endl;
+            config.ex_status = 1;
+            return;
+        }
+        chdir(s.c_str());
+        getcwd(config.path, 256);
+        config.ex_status = 0;
+        config.s_path = display_path(string(config.path));
+    }
+
+    else if (strcmp(cmds[ind].instructions[0].c_str(), "pwd") == 0)
+    {
+        cout << config.path << endl;
+        config.ex_status = 0;
+    }
+    else
+    {
+        if (cmds[ind].instructions.size() == 1 || (cmds[ind].instructions.size() == 2 && strcmp(cmds[ind].instructions[1].c_str(), "-p")))
+        {
+            export_print();
+            config.ex_status = 0;
+        }
+        // else if (cmds[ind].instructions.size() == 3)
+        // {
+        //     if (strcmp(cmds[ind].instructions[1].c_str(), "-n") == 0)
+        //     {
+        //         export_delete(cmds[ind].instructions[2]);
+        //     }
+        // }
+    }
+}
+
+void printmyrc()
+{
+    fstream file;
+    file.open(config.myrc_fullpath.c_str(), ios::in);
+    string x;
+    while (file >> x)
+    {
+        if (x == "" || x == "\n")
+        {
+            continue;
+        }
+        cout << x << endl;
+    }
+    file.close();
+}
+
+int printenv_value(string envar)
+{
+    int stat = 0;
+    if (envar == "USER")
+    {
+        cout << config.username << endl;
+    }
+    else if (envar == "HOSTNAME")
+    {
+        cout << config.hostname << endl;
+    }
+    else if (envar == "PS1")
+    {
+        cout << config.symbol << endl;
+    }
+    else
+    {
+        fstream file;
+        file.open(config.myrc_fullpath.c_str(), ios::in);
+        string x;
+        if (envar == "PATH")
+        {
+            file >> x;
+            cout << x << endl;
+        }
+        else if (envar == "HOME")
+        {
+            file >> x;
+            file >> x;
+            cout << x << endl;
+        }
+        else
+        {
+            stat = 1;
+        }
+        file.close();
+    }
+    return stat;
+}
+
+void handle_echo(vector<Command> commands, int ind)
+{
+    for (int i = 1; i < commands[ind].instructions.size(); i++)
+    {
+        for (int j = 0; j < commands[ind].instructions[i].length(); j++)
+        {
+            if (commands[ind].instructions[i][j] == '$')
+            {
+                if (commands[ind].instructions[i][j + 1])
+                {
+                    if (commands[ind].instructions[i][j + 1] == '$')
+                    {
+                        cout << getpid();
+                        j++;
+                        continue;
+                    }
+                    else if (commands[ind].instructions[i][j + 1] == '?')
+                    {
+                        cout << config.ex_status;
+                        j++;
+                        continue;
+                    }
+                }
+            }
+            cout << commands[ind].instructions[i][j];
+        }
+        cout << " ";
+    }
+    cout << endl;
+    config.ex_status = 0;
+}
+
+void alias_modify()
+{
+    string line;
+    ofstream fout;
+    fout.open(config.myrc_fullpath.c_str());
+    fout << config.myrc_info;
+    for (auto i : config.alias)
+    {
+        fout << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
+    }
+}
+
+void handle_alias(vector<Command> commands, int ind)
+{
+    int len = commands[ind].instructions.size();
+    if (len == 1)
+    {
+        for (auto i : config.alias)
+        {
+            cout << "alias " + i.first + "=" + "\'" + i.second + "\'" << endl;
+        }
+        config.ex_status = 0;
+        return;
+    }
+    else
+    {
+        int j;
+        string al_name = "", al_comm = "";
+        for (j = 0; j < commands[ind].instructions[1].length(); j++)
+        {
+            if (commands[ind].instructions[1][j] != '=')
+            {
+                al_name += commands[ind].instructions[1][j];
+            }
+            else
+            {
+                break;
+            }
+        }
+        j += 2;
+        while (commands[ind].instructions[1][j])
+        {
+            al_comm += commands[ind].instructions[1][j];
+            j++;
+        }
+        if (al_comm != "")
+        {
+            al_comm += " ";
+        }
+        for (int i = 2; i < len - 1; i++)
+        {
+            al_comm += commands[ind].instructions[i] + " ";
+        }
+
+        j = 0;
+        if (commands[ind].instructions[len - 1].length() != 1)
+        {
+            while (j < commands[ind].instructions[len - 1].length() - 1)
+            {
+                al_comm += commands[ind].instructions[len - 1][j];
+                j++;
+            }
+        }
+        
+        config.alias[al_name] = al_comm;
+        alias_modify();
+        config.ex_status = 0;
+    }
+}
 void init()
 {
     enable_shell();
@@ -661,6 +1040,9 @@ void init()
     }
     trie = new Trie();
     trie->initialize_trie();
+    getcwd(config.path, 256);
+    config.s_path = display_path(string(config.path));
+    create_myrc();
     clear_screen();
     history = new History();
 }
@@ -676,19 +1058,64 @@ void bghandler(int sig)
         }
     }
 }
-void check_builinCommands(string command)
+int check_builinCommands(vector<Command> commands,vector<Command>& alias)
 {
-    if (command == "exit")
+    int ind = 0;
+    auto search = config.alias.find(commands[ind].instructions[0]);
+    if (search != config.alias.end())
     {
-        exit(EXIT_SUCCESS);
+        if (search->second == "exit")
+        {
+            exit(EXIT_SUCCESS);
+        }
+        alias=process_commands(search->second);
+        return 1;
     }
-    else if (command == "clear")
+
+    if (strcmp(commands[ind].instructions[0].c_str(), "cd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "pwd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "export") == 0)
     {
-        clear_screen();
+        path_commands(commands, ind);
+        return 0;
     }
+
+    if (strcmp(commands[ind].instructions[0].c_str(), "env") == 0 && commands[ind].instructions.size() == 1)
+    {
+        printmyrc();
+        config.ex_status = 0;
+        return 0;
+    }
+
+    if (strcmp(commands[ind].instructions[0].c_str(), "printenv") == 0 && commands[ind].instructions.size() == 2)
+    {
+        if (printenv_value(commands[ind].instructions[1]))
+        {
+            config.ex_status = 1;
+        }
+        else
+        {
+            config.ex_status = 0;
+        }
+        return 0;
+    }
+
+    if (strcmp(commands[ind].instructions[0].c_str(), "echo") == 0)
+    {
+        handle_echo(commands, ind);
+        return 0;
+    }
+
+    if (strcmp(commands[ind].instructions[0].c_str(), "alias") == 0)
+    {
+        handle_alias(commands, ind);
+        return 0;
+        
+    }
+    return -1;
+
 }
 int start_command(vector<Command> commands)
 {
+    
     for (int i = 0; i < commands.size() - 1; i++)
     {
         pid_t pid, wpid;
@@ -781,8 +1208,9 @@ int start_command(vector<Command> commands)
             {
                 args[commands[n].instructions.size() - 1][commands[n].instructions[commands[n].instructions.size() - 1].length() - 1] = '\0';
             }
-            if (execvp(args[0], args) == -1){
-                cout << "command failed"<<flush;
+            if (execvp(args[0], args) == -1)
+            {
+                cout << "command failed" << flush;
                 _exit(EXIT_FAILURE);
             }
             break;
@@ -818,8 +1246,9 @@ int start_command(vector<Command> commands)
             }
             dup2(fd, 1);
             args[index] = 0;
-            if (execvp(args[0], args) == -1){
-                cout << "command failed"<<flush;
+            if (execvp(args[0], args) == -1)
+            {
+                cout << "command failed" << flush;
                 _exit(EXIT_FAILURE);
             }
             close(fd);
@@ -846,7 +1275,8 @@ int main(int argc, char const *argv[])
     signal(SIGINT, ctrl_c);
     /* signal(SIGCHLD, handler); */
     while (1)
-    {   bool exec=true;
+    {
+        bool exec = true;
         string command = read_command(&exec);
         history->insert(command);
         if (command == "exit")
@@ -854,7 +1284,7 @@ int main(int argc, char const *argv[])
             exit(EXIT_SUCCESS);
             return 0;
         }
-         if (command == "history")
+        if (command == "history")
         {
             history->print_history();
             continue;
@@ -865,9 +1295,17 @@ int main(int argc, char const *argv[])
             history->search_history_file(keyword);
             continue;
         }
-        if (!command.empty()&&exec)
+        vector<Command> cmds = process_commands(command);
+        vector<Command> builin_commands;
+        int val=check_builinCommands(cmds, builin_commands);
+        if(val==1){
+            cmds=builin_commands;
+        }else if(val==0){
+            continue;
+        }
+        
+        if (!cmds.empty() && exec)
         {
-            vector<Command> cmds = process_commands(command);
 
             pid_t pid = fork();
             pid_t wpid;

@@ -1,0 +1,8 @@
+PATH=/home/mascot/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin:/snap/bin
+HOME=/home/mascot
+USER=mascot
+HOSTNAME=mascot-ROG-Strix-G531GT-G531GT
+PS1=$
+alias d='s d=l'
+alias z='s z=l'
+alias zz='ls zz==l'

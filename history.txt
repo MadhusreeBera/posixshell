@@ -45,3 +45,49 @@
 45	ll
 46	ll
 47	exit
+48	ls
+49	exit
+50	ls
+51	clear
+52	ls -la
+53	ll
+54	sbnsk
+55	djsnn
+56	exit
+57	cd ..
+58	cd ..
+59	cd ..
+60	ls -la
+61	ll
+62	exit
+60	et
+64	kndsk
+65	dknkd
+66	exit
+67	cd ..
+68	cd ..
+69	exit
+70	cd ..
+71	cd ..
+72	cd posiix_git
+73	exit
+74	cd ..
+75	cd ..
+76	exit
+77	alias kk='ls'
+78	kk
+79	exit
+80	alias lz='ls'
+81	lz
+82	alias zz='ls'
+83	zz
+84	alias lk='ls'
+85	alias zz==ls
+86	alias z=ls
+87	z
+88	$PS1
+89	$$
+90	$?
+91	alias
+92	alias d=ls
+93	d
