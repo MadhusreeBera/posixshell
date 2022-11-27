@@ -68,6 +68,7 @@ public:
     string myrc_fullpath;
     int ex_status = 0;
     map<string, string>alias;
+    string myrc_info = "";
 } config;
 
 class cursor
@@ -204,17 +205,21 @@ void create_myrc()
     getcwd(config.myrc_path, 256);
     config.myrc_fullpath = string(config.myrc_path) + "/myrc.txt";
     file << "PATH=" + string(getenv("PATH")) << "\n";
+    config.myrc_info += "PATH=" + string(getenv("PATH")) + "\n";
     file << "HOME=" + string(getenv("HOME")) << "\n";
+    config.myrc_info += "HOME=" + string(getenv("HOME")) + "\n";
     config.username = string(getenv("USER"));
     file << "USER=" + config.username << "\n";
+    config.myrc_info += "USER=" + config.username + "\n";
     char host[1024];
     memset(host, 0, 1024);
     gethostname(host, 1024);
     config.hostname = string(host);
     file << "HOSTNAME=" + config.hostname << "\n";
+    config.myrc_info += "HOSTNAME=" + config.hostname + "\n";
     config.symbol = "$";
-    file << "PS1=$"
-         << "\n";
+    file << "PS1=$" << "\n";
+    config.myrc_info += "PS1=$\n";
 }
 
 vector<string> split_string(string s, char ch)
@@ -410,6 +415,7 @@ void export_delete(string del_comm)
     remove(config.myrc_fullpath.c_str());
     rename(tempfile.c_str(), config.myrc_fullpath.c_str());
 }
+
 
 bool pathexists(string pathname)
 {
@@ -639,6 +645,18 @@ void handle_echo(vector<Command>commands, int ind){
         config.ex_status = 0;
 }
 
+void alias_modify()
+{
+    string line;
+    ofstream fout;
+    fout.open(config.myrc_fullpath.c_str());
+    fout << config.myrc_info;
+    for(auto i: config.alias){
+        fout << "alias "+ i.first+"="+"\'"+i.second+"\'\n";
+    }
+    
+}
+
 void handle_alias(vector<Command>commands, int ind){
     int len = commands[ind].instructions.size();
     if(len == 1){
@@ -681,6 +699,7 @@ void handle_alias(vector<Command>commands, int ind){
         cout<<al_name<<endl;
         cout<<al_comm<<endl;
         config.alias[al_name] = al_comm;
+        alias_modify();
         config.ex_status = 0;
     }
 }
