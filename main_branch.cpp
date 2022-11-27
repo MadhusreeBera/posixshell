@@ -20,6 +20,7 @@
 #include <sys/wait.h>
 #include <fstream>
 #include <dirent.h>
+#include <fcntl.h>
 
 #define RESET "\033[0m"
 #define BLACK "\033[30m"              /* Black */
@@ -54,7 +55,7 @@
 #define all(x) (x).begin(), (x).end()
 
 using namespace std;
-
+list<int> bg;
 class Config
 {
 public:
@@ -70,8 +71,8 @@ class cursor
 public:
     int win_x = 0;
     int win_y = 0;
-    int x = 0;
-    int y = 0;
+    int x = 1;
+    int y = 1;
 } cursor;
 class Command
 {
@@ -375,12 +376,14 @@ public:
         }
     }
 } * trie;
-string read_command()
-{
 
+string read_command(bool *exec)
+{
+    set_cursor_position(cursor.win_y - 1, 1);
     string s;
     s = "\x1b[1m\x1b[34mPOSIX-PARTY : \x1b[0m\x1b[1m\x1b[32m" + config.HOME + "$ \x1b[0m";
-    cout << s << flush;
+    cout << '\n'
+         << s << flush;
     cursor.x = s.length();
     int label = s.length();
     while (1)
@@ -394,16 +397,18 @@ string read_command()
                 if (!s.empty() && cursor.x > label)
                 {
                     clearLineMacro();
-                    set_cursor_position(cursor.y, 0);
+                    set_cursor_position(cursor.win_y - 1, 1);
                     s.pop_back();
                     cursor.x--;
-                    cout << s << flush;
+                    cout << '\n'
+                         << s << flush;
                 }
                 else
                 {
                     clearLineMacro();
-                    set_cursor_position(cursor.y, 0);
-                    cout << s << flush;
+                    set_cursor_position(cursor.win_y - 1, 1);
+                    cout << '\n'
+                         << s << flush;
                 }
             }
             else if (int(key[0]) == 27)
@@ -415,26 +420,30 @@ string read_command()
                     if (int(key[2]) == RIGHT)
                     {
                         clearLineMacro();
-                        set_cursor_position(cursor.y, 0);
-                        cout << s << flush;
+                        set_cursor_position(cursor.win_y - 1, 1);
+                        cout << '\n'
+                             << s << flush;
                     }
                     else if (int(key[2]) == LEFT)
                     {
                         clearLineMacro();
-                        set_cursor_position(cursor.y, 0);
-                        cout << s << flush;
+                        set_cursor_position(cursor.win_y - 1, 1);
+                        cout << '\n'
+                             << s << flush;
                     }
                     else if (int(key[2]) == UP)
                     {
                         clearLineMacro();
-                        set_cursor_position(cursor.y, 0);
-                        cout << s << flush;
+                        set_cursor_position(cursor.win_y - 1, 1);
+                        cout << '\n'
+                             << s << flush;
                     }
                     else if (int(key[2]) == DOWN)
                     {
                         clearLineMacro();
-                        set_cursor_position(cursor.y, 0);
-                        cout << s << flush;
+                        set_cursor_position(cursor.win_y - 1, 1);
+                        cout << '\n'
+                             << s << flush;
                     }
                 }
             }
@@ -454,8 +463,9 @@ string read_command()
                 int prefix_len = prefix.length();
                 vector<string> commandList = trie->auto_complete(prefix);
                 clearLineMacro();
-                set_cursor_position(cursor.y, 0);
-                cout << s << flush;
+                set_cursor_position(cursor.win_y - 1, 1);
+                cout << '\n'
+                     << s << flush;
                 if (commandList.size() == 1)
                 {
 
@@ -465,13 +475,15 @@ string read_command()
                         cursor.x++;
                     }
                     clearLineMacro();
-                    set_cursor_position(cursor.y, 0);
-                    cout << s << flush;
+                    set_cursor_position(cursor.win_y - 1, 1);
+                    cout << '\n'
+                         << s << flush;
                 }
                 else if (commandList.size() > 1)
                 {
                     cout << endl;
                     int count = 0;
+                    cursor.y++;
                     for (auto ele : commandList)
                     {
 
@@ -483,7 +495,9 @@ string read_command()
                             cout << endl;
                         }
                     }
+                    cursor.y++;
                     cout << endl;
+                    *exec = false;
                     break;
                 }
             }
@@ -560,19 +574,29 @@ void handler(int sig)
 
     return;
 }
+void print_alarm(string message, int seconds)
+{
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        sleep(seconds);
+        cout << message << endl;
+
+        exit(EXIT_SUCCESS);
+    }
+}
+
 void clear_screen()
 {
 
     write(STDOUT_FILENO, "\x1b[H", 3);
     write(STDOUT_FILENO, "\x1b[2J", 4);
 }
-
 class History
 {
 public:
     ofstream history_logger;
     int HISTSIZE, no_of_commands;
-    Trie *history_trie;
     History()
     {
         history_logger.open("history.txt", ios_base::app);
@@ -586,7 +610,6 @@ public:
         string line;
         while (std::getline(history_if, line))
             ++no_of_commands;
-        history_trie = new Trie();
     }
     void insert(string command)
     {
@@ -596,7 +619,6 @@ public:
         {
             string line = to_string(++no_of_commands) + "\t" + command;
             history_logger << line << endl;
-            history_trie->insert(command);
         }
     }
     void print_history()
@@ -615,23 +637,7 @@ public:
         }
         history_input_stream.close();
     }
-    void search(string command)
-    {
-        vector<string> searchResult = history_trie->auto_complete(command);
-        cout << endl;
-        int count = 0;
-        for (auto ele : searchResult)
-        {
 
-            cout << left << setw(30) << ele;
-            count++;
-            if (count % 4 == 0)
-            {
-                cout << endl;
-            }
-        }
-        cout << endl;
-    }
     void search_history_file(string key)
     {
         ifstream history_input_stream;
@@ -672,6 +678,176 @@ void init()
 
     clear_screen();
 }
+void bghandler(int sig)
+{
+    int bgstatus = 0;
+    for (list<int>::iterator bgp = bg.begin(); bgp != bg.end(); bgp++)
+    {
+        if (waitpid(*bgp, &bgstatus, WNOHANG))
+        {
+            cout << *bgp << " done with status " << bgstatus << endl;
+            bg.erase(bgp);
+        }
+    }
+}
+void check_builinCommands(string command)
+{
+    if (command == "exit")
+    {
+        exit(EXIT_SUCCESS);
+    }
+    else if (command == "clear")
+    {
+        clear_screen();
+    }
+}
+int start_command(vector<Command> commands)
+{
+    for (int i = 0; i < commands.size() - 1; i++)
+    {
+        pid_t pid, wpid;
+        int status;
+
+        int pd[2];
+
+        if (pipe(pd) < 0)
+        {
+            cerr << "pipe failed" << endl;
+        }
+
+        char *args[commands[i].instructions.size() + 1];
+
+        for (int j = 0; j < commands[i].instructions.size(); j++)
+        {
+            args[j] = new char[commands[i].instructions[j].length()];
+            strcpy(args[j], commands[i].instructions[j].c_str());
+        }
+        args[commands[i].instructions.size()] = NULL;
+
+        pid = fork();
+
+        switch (pid)
+        {
+        case -1:
+            cerr << "fork failed" << endl;
+            break;
+
+        case 0:
+            dup2(pd[1], 1);
+            close(pd[0]);
+            close(pd[1]);
+
+            if (execvp(args[0], args) == -1)
+            {
+                cerr << "command failed" << endl;
+            }
+            for (int i = 0; i < commands[i].instructions.size() + 1; i++)
+                delete (args[i]);
+            break;
+
+        default:
+            do
+            {
+                wpid = waitpid(pid, &status, WUNTRACED);
+            } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+            break;
+        }
+
+        dup2(pd[0], 0);
+        close(pd[1]);
+        close(pd[0]);
+    }
+
+    pid_t pid, wpid;
+    int status;
+    int n = commands.size() - 1;
+
+    char *args[commands[n].instructions.size() + 1];
+
+    for (int i = 0; i < commands[n].instructions.size(); i++)
+    {
+        args[i] = new char[commands[n].instructions[i].length()];
+        strcpy(args[i], commands[n].instructions[i].c_str());
+    }
+    args[commands[n].instructions.size()] = NULL;
+
+    bool redirectFlag = 0;
+    bool isBg = 0;
+
+    if (strcmp(args[commands[n].instructions.size() - 1], "&") == 0 || args[commands[n].instructions.size() - 1][commands[n].instructions[commands[n].instructions.size() - 1].length() - 1] == '&')
+    {
+        isBg = 1;
+        signal(SIGCHLD, bghandler);
+        pid_t pid = fork();
+
+        switch (pid)
+        {
+        case -1:
+            cerr << "fork failed" << endl;
+            break;
+        case 0:
+            if (strcmp(args[commands[n].instructions.size() - 1], "&") == 0)
+            {
+                args[commands[n].instructions.size() - 1] = NULL;
+            }
+            else
+            {
+                args[commands[n].instructions.size() - 1][commands[n].instructions[commands[n].instructions.size() - 1].length() - 1] = '\0';
+            }
+            if (execvp(args[0], args) == -1)
+                cerr << "command failed";
+
+            break;
+        }
+        bg.push_back(pid);
+        setpgid(pid, 0);
+        cout << bg.size() << " " << pid << endl;
+    }
+
+    if (&isBg && args[1] != NULL)
+    {
+        int index;
+        for (int i = 0; i < commands[n].instructions.size(); i++)
+        {
+            if (strcmp(args[i], ">") == 0 || strcmp(args[i], ">>") == 0)
+            {
+                index = i;
+                redirectFlag = 1;
+                break;
+            }
+        }
+
+        if (redirectFlag)
+        {
+            int fd;
+            if (strcmp(args[index], ">") == 0)
+            {
+                fd = open(args[index + 1], O_CREAT | O_WRONLY | O_TRUNC, 0644);
+            }
+            else
+            {
+                fd = open(args[index + 1], O_CREAT | O_WRONLY | O_APPEND, 0644);
+            }
+            dup2(fd, 1);
+            args[index] = 0;
+            if (execvp(args[0], args) == -1)
+                cerr << "command failed";
+            close(fd);
+        }
+    }
+
+    if (!isBg && !redirectFlag)
+    {
+        if (execvp(args[0], args) == -1)
+        {
+            cerr << "command failed" << endl;
+        }
+        for (int i = 0; i < commands[n].instructions.size() + 1; i++)
+            delete (args[i]);
+    }
+
+    return 1;
+}
 int main(int argc, char const *argv[])
 {
     init();
@@ -680,7 +856,8 @@ int main(int argc, char const *argv[])
     /* signal(SIGCHLD, handler); */
     while (1)
     {
-        string command = read_command();
+        bool exec = true;
+        string command = read_command(&exec);
         history->insert(command);
 
         if (command == "exit")
@@ -699,8 +876,31 @@ int main(int argc, char const *argv[])
             history->search_history_file(keyword);
             continue;
         }
+        if (!command.empty() && exec)
+        {
+            vector<Command> cmds = process_commands(command);
 
-        vector<Command> cmds = process_commands(command);
+            pid_t pid = fork();
+            pid_t wpid;
+            int status = 0;
+
+            switch (pid)
+            {
+            case -1:
+                cerr << "fork error" << endl;
+                break;
+
+            case 0:
+                start_command(cmds);
+
+            default:
+                do
+                {
+                    wpid = waitpid(pid, &status, WUNTRACED);
+                } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+                break;
+            }
+        }
     }
     return 0;
 }
