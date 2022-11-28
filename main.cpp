@@ -91,6 +91,7 @@ public:
     }
     void record_data(string data)
     {
+        recorder_stream.seekp (0, ios::end);
         recorder_stream << data << endl;
     }
 } * recorder;
@@ -1841,15 +1842,18 @@ int start_command(vector<Command> commands)
 
     if (!redirectFlag)
     {
-        if (execvp(args[0], args) == -1)
-        {
-            if (recorder->is_recording)
+        if (recorder -> is_recording && freopen ("recording.txt", "a", stdout)){
+            if (execvp(args[0], args) == -1)
             {
-                recorder->record_data("Command Failed");
+                cout << "command failed" << endl;
+                _exit(EXIT_FAILURE);
             }
-            cout << "command failed" << endl;
-            config.ex_status = 127;
-            _exit(EXIT_FAILURE);
+        } else {
+            if (execvp(args[0], args) == -1)
+            {
+                cout << "command failed" << endl;
+                _exit(EXIT_FAILURE);
+            }
         }
         for (int i = 0; i < commands[n].instructions.size() + 1; i++)
             delete (args[i]);
