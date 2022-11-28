@@ -11,6 +11,7 @@ We have developed a POSIX compatible shell which supports a subset of features o
 
 1.  IO Redirection
     `>>` and `>`
+    space between command, operator, and filename. eg. ls > out.txt is valid. ls>out.txt is not.
 2.  Pipe
     `|`
 3.  Root user prompt change
@@ -31,7 +32,7 @@ We have developed a POSIX compatible shell which supports a subset of features o
     `alias ll='ls -l'`
 9.  `$$` : shows pid of current process
 10. `$?`: shows status of last executed process
-11. `record start`: starts recording input and output of shell in "recording.txt" file
+11. `record start`: starts recording input and output of shell in "recording.txt" file (output is not displayed for processes run by exec).
 12. `record stop`: stops recording
 13. `history` : shows history of commands upto size stored in HISTSIZE
 14. `history keyword`: filters and shows all lines in history containing keyword
