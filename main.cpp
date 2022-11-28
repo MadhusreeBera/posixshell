@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <map>
+#include <set>
 
 #define RESET "\033[0m"
 #define BLACK "\033[30m"              /* Black */
@@ -58,6 +59,7 @@
 
 using namespace std;
 
+list<int> bg;
 class Node
 {
 public:
@@ -67,7 +69,7 @@ public:
     Node()
     {
         parent = NULL;
-        for (int i = 0; i < 27; i++)
+        for (int i = 0; i < 257; i++)
         {
             next[i] = NULL;
         }
@@ -75,13 +77,65 @@ public:
     Node(char ch)
     {
         this->ch = ch;
-        for (int i = 0; i < 27; i++)
+        for (int i = 0; i < 257; i++)
         {
             next[i] = NULL;
         }
     }
 };
-list<int> bg;
+vector<string> split_string(string s, char ch);
+class Recorder
+{
+public:
+    ofstream recorder_stream;
+    bool is_recording;
+    Recorder()
+    {
+        recorder_stream.open("recording.txt");
+        is_recording = false;
+    }
+    void start_recording()
+    {
+        is_recording = true;
+    }
+    void stop_recording()
+    {
+        is_recording = false;
+    }
+    void record_data(string data)
+    {
+        recorder_stream << data << endl;
+    }
+} * recorder;
+class Config
+{
+public:
+    struct termios orig_termios;
+    int shell_id;
+    char path[256];
+    string s_path;
+    string env_path;
+    string username = "", hostname, symbol;
+    string HOME = string(getenv("HOME"));
+    string myrc_fullpath;
+    string alarm = "alarm";
+    int ex_status = 0;
+    map<string, string> alias;
+    map<string, string> env_v;
+    string PATH = string(getenv("PATH"));
+    unordered_map<string, pair<string, string>> extension_shorcuts;
+    unordered_map<long long int, string> alarm_map;
+    unordered_map<int, long long int> active;
+    unordered_map<long long int, string> missed_alarm;
+    string myrc_info = "";
+    char myrc_path[256];
+    set<long> children;
+    int shell_term;
+    pid_t shell_pg;
+    bool isSuspended;
+    int histsize = 2000;
+} config;
+
 class Trie
 {
 public:
@@ -97,40 +151,50 @@ public:
     {
         trie_logger.open("trie_logger.txt");
         trie_logger << "Initializing trie" << endl;
+        trie_logger << config.PATH << endl;
 
-        DIR *dir = opendir("/bin/");
-        trie_logger << "accessing files" << endl;
-        if (dir == NULL)
+        vector<string> pathList = split_string(config.PATH, ':');
+
+        for (string path : pathList)
         {
-            trie_logger << "not open" << endl;
-            exit(1);
-        }
-        struct dirent *entity;
-        entity = readdir(dir);
-        trie_logger << "printing files" << endl;
-
-        while (entity != NULL)
-        {
-
-            string command_name = string(entity->d_name);
-            // command_name = entity->d_name;
-            if (command_name == "." || command_name == "..")
+            trie_logger << "**********************************************" << endl
+                        << path << endl
+                        << endl;
+            DIR *dir = opendir(path.c_str());
+            trie_logger << "accessing files" << endl;
+            if (dir == NULL)
             {
-                entity = readdir(dir);
-
-                continue;
+                trie_logger << "not open" << endl;
+                exit(1);
             }
-
-            insert(command_name);
-            // trie_logger << command_name << endl;
-
+            struct dirent *entity;
             entity = readdir(dir);
+            trie_logger << "printing files" << endl;
+
+            while (entity != NULL)
+            {
+
+                string command_name = string(entity->d_name);
+                // command_name = entity->d_name;
+                if (command_name == "." || command_name == "..")
+                {
+                    entity = readdir(dir);
+
+                    continue;
+                }
+
+                insert(command_name);
+                trie_logger << command_name << endl;
+
+                entity = readdir(dir);
+            }
+            closedir(dir);
         }
-        closedir(dir);
     }
     void insert(string st)
     {
         Node *cur = root;
+
         int n = st.length();
         for (int i = 0; i < n; i++)
         {
@@ -181,8 +245,10 @@ public:
     }
     vector<string> auto_complete(string prefix)
     {
-        Node *cur = root;
         vector<string> wordList;
+        if (prefix == "")
+            return wordList;
+        Node *cur = root;
         for (int i = 0; i < prefix.length(); i++)
         {
             int index = int(prefix[i]);
@@ -209,24 +275,85 @@ public:
         }
     }
 } * trie;
-class Config
+int getHISTSIZE();
+class History
 {
 public:
-    struct termios orig_termios;
-    int shell_id;
-    char path[256];
-    string s_path;
-    string username, hostname, symbol;
-    string HOME = string(getenv("HOME"));
-    string myrc_fullpath;
-    int ex_status = 0;
-    map<string, string> alias;
-    string myrc_info = "";
-    char myrc_path[256];
-    int shell_term;
-    pid_t shell_pg;
-    bool isSuspended;
-} config;
+    ofstream history_logger;
+    int HISTSIZE, no_of_commands;
+    string history_path;
+    History()
+    {
+        history_logger.open("history.txt", ios_base::app);
+        history_path = string(config.path) + "/history.txt";
+        // read HISTSIZE from myrc
+
+        HISTSIZE = getHISTSIZE();
+        no_of_commands = 0;
+
+        ifstream history_if;
+        history_if.open("history.txt");
+        string line;
+        while (std::getline(history_if, line))
+            ++no_of_commands;
+    }
+    void insert(string command)
+    {
+        if (command == "")
+            return;
+        if (no_of_commands < HISTSIZE)
+        {
+            string line = to_string(++no_of_commands) + "\t" + command;
+            history_logger << line << endl;
+        }
+    }
+    void print_history()
+    {
+
+        ifstream history_input_stream;
+        history_input_stream.open(history_path);
+        if (history_input_stream.fail())
+        {
+            perror("Failed to load history: ");
+            // return;
+        }
+        string line, line_number;
+        for (std::string line; getline(history_input_stream, line);)
+        {
+            cout << line << endl;
+            if (recorder->is_recording)
+                recorder->record_data(line);
+        }
+        history_input_stream.close();
+    }
+
+    void search_history_file(string key)
+    {
+        ifstream history_input_stream;
+        history_input_stream.open(history_path);
+        if (history_input_stream.fail())
+        {
+            perror("Failed to open history: ");
+            return;
+        }
+        string line, line_number;
+        for (std::string line; getline(history_input_stream, line);)
+        {
+            // cout << line << endl;
+            Trie *line_trie = new Trie();
+            line_trie->insert_suffix(line);
+            vector<string> searchResult = line_trie->auto_complete(key);
+            if (searchResult.size() > 0)
+            {
+                cout << line << endl;
+
+                if (recorder->is_recording)
+                    recorder->record_data(line);
+            }
+        }
+        history_input_stream.close();
+    }
+} * history;
 
 class cursor
 {
@@ -256,76 +383,7 @@ enum KEYS
     q = 113,
     Q = 81
 };
-class History
-{
-public:
-    ofstream history_logger;
-    int HISTSIZE, no_of_commands;
-    History()
-    {
-        history_logger.open("history.txt", ios_base::app);
-        // read HISTSIZE from myrc
 
-        HISTSIZE = 100;
-        no_of_commands = 0;
-
-        ifstream history_if;
-        history_if.open("history.txt");
-        string line;
-        while (std::getline(history_if, line))
-            ++no_of_commands;
-    }
-    void insert(string command)
-    {
-        if (command == "")
-            return;
-        if (no_of_commands < HISTSIZE)
-        {
-            string line = to_string(++no_of_commands) + "\t" + command;
-            history_logger << line << endl;
-        }
-    }
-    void print_history()
-    {
-        ifstream history_input_stream;
-        history_input_stream.open("history.txt");
-        if (history_input_stream.fail())
-        {
-            perror("Failed to load history: ");
-            return;
-        }
-        string line, line_number;
-        for (std::string line; getline(history_input_stream, line);)
-        {
-            cout << line << endl;
-        }
-        history_input_stream.close();
-    }
-
-    void search_history_file(string key)
-    {
-        ifstream history_input_stream;
-        history_input_stream.open("history.txt");
-        if (history_input_stream.fail())
-        {
-            perror("Failed to open history: ");
-            return;
-        }
-        string line, line_number;
-        for (std::string line; getline(history_input_stream, line);)
-        {
-            // cout << line << endl;
-            Trie *line_trie = new Trie();
-            line_trie->insert_suffix(line);
-            vector<string> searchResult = line_trie->auto_complete(key);
-            if (searchResult.size() > 0)
-            {
-                cout << line << endl;
-            }
-        }
-        history_input_stream.close();
-    }
-} * history;
 bool set_cursor_position(int row, int col)
 {
     char buf[64];
@@ -337,8 +395,20 @@ void clearLineMacro()
 {
     cout << "\033[2K" << flush;
 }
+void kill_all_processes()
+{
+    for (auto i : config.children)
+    {
+        kill(i, SIGKILL);
+    }
+    for (auto i : bg)
+    {
+        kill(i, SIGKILL);
+    }
+}
 void disable_shell()
 {
+    kill_all_processes();
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &config.orig_termios) != 0)
     {
         exit(EXIT_FAILURE);
@@ -416,29 +486,112 @@ int getWindowSize(int *rows, int *cols)
         return 0;
     }
 }
+
+bool fileExists(const std::string &filename)
+{
+    struct stat buf;
+    if (stat(filename.c_str(), &buf) != -1)
+    {
+        return true;
+    }
+    return false;
+}
+void env_var_modify()
+{
+    string line;
+    ofstream fout;
+    fout.open(config.myrc_fullpath.c_str());
+    fout << "PATH=" + config.env_path << "\n";
+    fout << "HOME=" + config.HOME << "\n";
+    fout << "USER=" + config.username << "\n";
+    fout << "HOSTNAME=" + config.hostname << "\n";
+    fout << "PS1=" + config.symbol
+         << "\n";
+    fout << "HISTSIZE=" + to_string(config.histsize)
+         << "\n";
+    for (auto i : config.alias)
+    {
+        fout << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
+    }
+    for (auto i : config.env_v)
+    {
+        fout << i.first + "=" + i.second + "\n";
+    }
+    fout.close();
+}
+
+void export_new_var(string comm)
+{
+    vector<string> s = split_string(comm, '=');
+    if(s.size()==1)
+        return;
+    config.env_v[s[0]] = s[1];
+    if (config.username != "")
+    {
+        env_var_modify();
+    }
+    config.ex_status = 0;
+}
+void handle_alias(vector<Command>, int);
+vector<Command> process_commands(string);
 void create_myrc()
 {
+    if (fileExists(".myrc"))
+    {
+        fstream file;
+        file.open(".myrc", ios::in);
+        string x;
+        int count = 0;
+        while (getline(file, x))
+        {
+            if (count < 6)
+            {
+                if (x.substr(0, 8) == "HISTSIZE")
+                {
+                    config.histsize = stoi(x.substr(9, x.length() - 9));
+                }
+                count++;
+                continue;
+            }
+            if (x.substr(0, 5) == "alias")
+            {
+                vector<Command> var = process_commands(x);
+                handle_alias(var, 0);
+            }
+            else
+            {
+                export_new_var(x);
+            }
+        }
+    }
     fstream file;
-    file.open("myrc.txt", ios::out);
+    file.open(".myrc", ios::out);
     getcwd(config.myrc_path, 256);
-    config.myrc_fullpath = string(config.myrc_path) + "/myrc.txt";
+    config.myrc_fullpath = string(config.myrc_path) + "/.myrc";
     file << "PATH=" + string(getenv("PATH")) << "\n";
-    config.myrc_info += "PATH=" + string(getenv("PATH")) + "\n";
+    config.env_path = string(getenv("PATH"));
     file << "HOME=" + string(getenv("HOME")) << "\n";
-    config.myrc_info += "HOME=" + string(getenv("HOME")) + "\n";
     config.username = string(getenv("USER"));
     file << "USER=" + config.username << "\n";
-    config.myrc_info += "USER=" + config.username + "\n";
     char host[1024];
     memset(host, 0, 1024);
     gethostname(host, 1024);
     config.hostname = string(host);
     file << "HOSTNAME=" + config.hostname << "\n";
-    config.myrc_info += "HOSTNAME=" + config.hostname + "\n";
     config.symbol = "$";
     file << "PS1=$"
          << "\n";
-    config.myrc_info += "PS1=$\n";
+    file << "HISTSIZE=" + to_string(config.histsize)
+         << "\n";
+    for (auto i : config.alias)
+    {
+        file << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
+    }
+    for (auto i : config.env_v)
+    {
+        file << i.first + "=" + i.second + "\n";
+    }
+    file.close();
 }
 void enable_shell()
 {
@@ -446,6 +599,25 @@ void enable_shell()
     struct termios raw = config.orig_termios;
     raw.c_lflag &= ~(ICANON);
     tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw);
+}
+int getHISTSIZE()
+{
+    fstream file;
+    file.open(config.myrc_fullpath.c_str(), ios::in);
+    string x;
+    int count = 0;
+    int histsize;
+    while (file >> x)
+    {
+        if (count == 5)
+        {
+            int ind = x.find("=");
+            histsize = stoi(x.substr(ind + 1, 4));
+            break;
+        }
+        count++;
+    }
+    return histsize;
 }
 vector<string> split_string(string s, char ch)
 {
@@ -459,6 +631,23 @@ vector<string> split_string(string s, char ch)
         tokens.push_back(token);
     }
     return tokens;
+}
+void read_file()
+{
+    vector<string> tokens;
+    ofstream off(".myrc", ios::app);
+    off.close();
+    ifstream iff(".myrc");
+    string token;
+
+    while (getline(iff, token, '\n'))
+    {
+        vector<string> v = split_string(token, '=');
+        if (v[0] == "ext")
+        {   vector<string> vec = split_string(v[1], ' ');
+            config.extension_shorcuts[vec[vec.size() - 1]] = make_pair(vec[0], vec[1]);
+        }
+    }
 }
 string getParent_dir(string s)
 {
@@ -478,6 +667,18 @@ string read_command(bool *exec)
     s = BOLDRED + config.username + "@" + config.hostname + ": \x1b[0m" + BOLDYELLOW + config.s_path + " " + config.symbol + " \x1b[0m";
     cout << '\n'
          << s << flush;
+    if (config.missed_alarm.size() > 0)
+    {
+        cout << endl
+             << "Missed Alarm: " << endl;
+
+        for (auto i : config.missed_alarm)
+        {
+            cout << abs(i.first) << "seconds ago   message:" << i.second << endl;
+        }
+        config.missed_alarm.clear();
+        return "";
+    }
     cursor.x = s.length();
     int label = s.length();
     while (1)
@@ -668,17 +869,6 @@ void handler(int sig)
 
     return;
 }
-void print_alarm(string message, int seconds)
-{
-    pid_t pid = fork();
-    if (pid == 0)
-    {
-        sleep(seconds);
-        cout << message << endl;
-
-        exit(EXIT_SUCCESS);
-    }
-}
 
 void clear_screen()
 {
@@ -691,49 +881,81 @@ void export_print()
     fstream file;
     file.open(config.myrc_fullpath.c_str(), ios::in);
     string x;
-    while (file >> x)
+    while (getline(file, x))
     {
         if (x == "" || x == "\n")
         {
             continue;
         }
-        vector<string> var = split_string(x, '=');
-        cout << "declare -x " << var[0] << "="
-             << "\"" << var[1] << "\"" << endl;
+        else if (x.substr(0, 5) == "alias")
+        {
+            cout << "declare -x " << x << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data("declare -x " + x);
+            }
+        }
+        else
+        {
+            vector<string> var = split_string(x, '=');
+            cout << "declare -x " << var[0] << "="
+                 << "\"" << var[1] << "\"" << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data("declare -x " + var[0] + "=" + "\"" + var[1] + "\"");
+            }
+        }
     }
     file.close();
 }
-void export_delete(string del_comm)
+
+void export_delete(string str, int flag)
 {
-    string line;
-    ifstream fin;
-    fin.open(config.myrc_fullpath.c_str());
-    ofstream temp;
-    string tempfile = string(config.myrc_path) + "/temp.txt";
-    temp.open(tempfile.c_str());
-    while (getline(fin, line))
+    if (flag == 0)
     {
-        if (line == "" || line == "\n")
+        auto search = config.env_v.find(str);
+        if (config.env_v.find(str) != config.env_v.end())
         {
-            continue;
+            config.ex_status = 0;
+            config.env_v.erase(str);
+            env_var_modify();
         }
-        vector<string> var = split_string(line, '=');
-        if (strcmp(var[0].c_str(), del_comm.c_str()) == 0)
+        else
         {
-            continue;
+            cout << "Not found" << endl;
+            config.ex_status = 1;
+            if (recorder->is_recording)
+            {
+                recorder->record_data("Not found");
+            }
         }
-        temp << line << endl;
     }
-    temp.close();
-    fin.close();
-    remove(config.myrc_fullpath.c_str());
-    rename(tempfile.c_str(), config.myrc_fullpath.c_str());
+    else
+    {
+        auto search = config.alias.find(str);
+        if (config.alias.find(str) != config.alias.end())
+        {
+            config.ex_status = 0;
+            config.alias.erase(str);
+            env_var_modify();
+        }
+        else
+        {
+            cout << "Not found" << endl;
+            config.ex_status = 1;
+            if (recorder->is_recording)
+            {
+                recorder->record_data("Not found");
+            }
+        }
+    }
 }
 bool pathexists(string pathname)
 {
     struct stat buff;
     return (stat(pathname.c_str(), &buff) == 0);
 }
+
 string display_path(string s)
 {
     vector<string> tokens = split_string(s, '/');
@@ -825,6 +1047,39 @@ string handle_path(string s)
     }
     return x;
 }
+
+int export_change(string str)
+{
+    int stat = 0;
+    if (str.substr(0, 3) == "PS1")
+    {
+        config.symbol = str.substr(4, str.length() - 4);
+        env_var_modify();
+        config.ex_status = 0;
+        stat = 1;
+    }
+    else if (str.substr(0, 3) == "HISTSIZE")
+    {
+        config.histsize = stoi(str.substr(9, str.length() - 9));
+        config.ex_status = 0;
+        env_var_modify();
+        stat = 1;
+    }
+    else if (config.env_v.find(str) != config.env_v.end())
+    {
+        auto search = config.env_v.find(str);
+        config.env_v[search->first] = search->second;
+        config.ex_status = 0;
+        stat = 1;
+        env_var_modify();
+    }
+    else
+    {
+        stat = 0;
+    }
+    return stat;
+}
+
 void path_commands(vector<Command> cmds, int ind)
 {
     if (strcmp(cmds[ind].instructions[0].c_str(), "cd") == 0)
@@ -837,6 +1092,10 @@ void path_commands(vector<Command> cmds, int ind)
         if (cmds[ind].instructions.size() > 2)
         {
             cout << "Too many arguments" << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data("Too many arguments\n");
+            }
             config.ex_status = 1;
             return;
         }
@@ -844,6 +1103,10 @@ void path_commands(vector<Command> cmds, int ind)
         if (!pathexists(s))
         {
             cout << "No such file or directory" << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data("No such file or directory\n");
+            }
             config.ex_status = 1;
             return;
         }
@@ -856,22 +1119,45 @@ void path_commands(vector<Command> cmds, int ind)
     else if (strcmp(cmds[ind].instructions[0].c_str(), "pwd") == 0)
     {
         cout << config.path << endl;
+        if (recorder->is_recording)
+        {
+            recorder->record_data(string(config.path));
+        }
         config.ex_status = 0;
     }
     else
     {
-        if (cmds[ind].instructions.size() == 1 || (cmds[ind].instructions.size() == 2 && strcmp(cmds[ind].instructions[1].c_str(), "-p")))
+        if (cmds[ind].instructions.size() == 1 || (cmds[ind].instructions.size() == 2 && strcmp(cmds[ind].instructions[1].c_str(), "-p") == 0))
         {
+            cout << 1 << endl;
             export_print();
             config.ex_status = 0;
         }
-        // else if (cmds[ind].instructions.size() == 3)
-        // {
-        //     if (strcmp(cmds[ind].instructions[1].c_str(), "-n") == 0)
-        //     {
-        //         export_delete(cmds[ind].instructions[2]);
-        //     }
-        // }
+        else if (cmds[ind].instructions.size() == 2)
+        {
+            if (!export_change(cmds[ind].instructions[1]))
+            {
+                export_new_var(cmds[ind].instructions[1]);
+            }
+        }
+        else if (cmds[ind].instructions.size() == 3 && cmds[ind].instructions[1] == "-n")
+        {
+            export_delete(cmds[ind].instructions[2], 0);
+        }
+        else if (cmds[ind].instructions.size() == 4 && strcmp(cmds[ind].instructions[1].c_str(), "-n") == 0)
+        {
+            // export_delete(cmds[ind].instructions[2], cmds[ind].instructions[3]);
+            if (cmds[ind].instructions[2].substr(0, 5) == "alias")
+            {
+                export_delete(cmds[ind].instructions[3], 1);
+            }
+        }
+        else if (cmds[ind].instructions[1].substr(0, 5) == "alias")
+        {
+            auto it = cmds[ind].instructions.begin();
+            cmds[ind].instructions.erase(it);
+            handle_alias(cmds, ind);
+        }
     }
 }
 
@@ -880,15 +1166,20 @@ void printmyrc()
     fstream file;
     file.open(config.myrc_fullpath.c_str(), ios::in);
     string x;
-    while (file >> x)
+    while (getline(file, x))
     {
         if (x == "" || x == "\n")
         {
             continue;
         }
         cout << x << endl;
+        if (recorder->is_recording)
+        {
+            recorder->record_data(x);
+        }
     }
     file.close();
+    config.ex_status = 0;
 }
 
 int printenv_value(string envar)
@@ -897,14 +1188,55 @@ int printenv_value(string envar)
     if (envar == "USER")
     {
         cout << config.username << endl;
+        if (recorder->is_recording)
+        {
+            recorder->record_data(config.username);
+        }
     }
     else if (envar == "HOSTNAME")
     {
         cout << config.hostname << endl;
+        if (recorder->is_recording)
+        {
+            recorder->record_data(config.hostname);
+        }
     }
     else if (envar == "PS1")
     {
         cout << config.symbol << endl;
+        if (recorder->is_recording)
+        {
+            recorder->record_data(config.symbol);
+        }
+    }
+    else if (config.env_v.find(envar) != config.env_v.end())
+    {
+        cout << config.env_v[envar] << endl;
+        if (recorder->is_recording)
+        {
+            recorder->record_data(config.env_v[envar]);
+        }
+    }
+    else if (envar.substr(0, 5) == "alias")
+    {
+        string al_name = envar.substr(6, envar.length() - 6);
+        if (config.alias.find(al_name) != config.alias.end())
+        {
+            cout << config.alias[al_name] << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data(config.alias[al_name]);
+            }
+        }
+        else
+        {
+            cout << "Not found" << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data("Not found");
+            }
+            return 1;
+        }
     }
     else
     {
@@ -914,13 +1246,21 @@ int printenv_value(string envar)
         if (envar == "PATH")
         {
             file >> x;
-            cout << x << endl;
+            cout << x.substr(5, x.length() - 5) << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data(x.substr(5, x.length() - 5));
+            }
         }
         else if (envar == "HOME")
         {
             file >> x;
             file >> x;
-            cout << x << endl;
+            cout << x.substr(5, x.length() - 5) << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data(x.substr(5, x.length() - 5));
+            }
         }
         else
         {
@@ -933,6 +1273,7 @@ int printenv_value(string envar)
 
 void handle_echo(vector<Command> commands, int ind)
 {
+    string s = "";
     for (int i = 1; i < commands[ind].instructions.size(); i++)
     {
         for (int j = 0; j < commands[ind].instructions[i].length(); j++)
@@ -943,26 +1284,96 @@ void handle_echo(vector<Command> commands, int ind)
                 {
                     if (commands[ind].instructions[i][j + 1] == '$')
                     {
-                        cout << getpid();
+                        int x = getpid();
+                        cout << to_string(x);
+                        s += x;
                         j++;
                         continue;
                     }
                     else if (commands[ind].instructions[i][j + 1] == '?')
                     {
                         cout << config.ex_status;
+                        s += to_string(config.ex_status);
                         j++;
                         continue;
                     }
                 }
             }
             cout << commands[ind].instructions[i][j];
+            s += commands[ind].instructions[i][j];
         }
         cout << " ";
+        s += " ";
     }
     cout << endl;
+    if (recorder->is_recording)
+    {
+        recorder->record_data(s);
+    }
     config.ex_status = 0;
 }
+void print_alarm(string message)
+{
 
+    cout << endl
+         << message << endl;
+
+    _exit(EXIT_SUCCESS);
+}
+
+void set_alarm(vector<string> messages, int seconds)
+{
+
+    string message;
+    for (int i = 2; i < messages.size(); i++)
+    {
+        message += messages[i];
+        message += " ";
+    }
+    std::time_t result = std::time(nullptr);
+    config.alarm_map[result + seconds] = message;
+    pid_t pid = fork();
+    config.children.insert(pid);
+    config.active[pid] = result + seconds;
+    if (pid == 0)
+    {
+
+        sleep(seconds);
+        print_alarm(message);
+    }
+}
+void alarm_map_to_file()
+{
+    ofstream off(config.alarm, ios::out);
+    for (auto i : config.alarm_map)
+    {
+        off << i.first << " " << i.second << endl;
+    }
+}
+void file_to_alarm_map()
+{
+    ofstream off(config.alarm, ios::app);
+    off.close();
+    ifstream iff(config.alarm);
+    string token;
+    while (getline(iff, token, '\n'))
+    {
+        vector<string> v = split_string(token, ' ');
+        std::time_t result = std::time(nullptr);
+        long long t = stoll(v[0]) - result;
+        if (t < 0)
+        {
+            config.missed_alarm[t] = v[1];
+        }
+        else
+        {
+            set_alarm(split_string(v[1], ' '), t);
+        }
+    }
+    iff.close();
+    ofstream offf(config.alarm);
+    offf.close();
+}
 void alias_modify()
 {
     string line;
@@ -983,13 +1394,17 @@ void handle_alias(vector<Command> commands, int ind)
         for (auto i : config.alias)
         {
             cout << "alias " + i.first + "=" + "\'" + i.second + "\'" << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data("alias " + i.first + "=" + "\'" + i.second + "\' \n");
+            }
         }
         config.ex_status = 0;
         return;
     }
     else
     {
-        int j;
+        int j, qflag = 0;
         string al_name = "", al_comm = "";
         for (j = 0; j < commands[ind].instructions[1].length(); j++)
         {
@@ -1002,15 +1417,59 @@ void handle_alias(vector<Command> commands, int ind)
                 break;
             }
         }
-        j += 2;
+        if (j == commands[ind].instructions[1].length())
+        {
+            auto search = config.alias.find(commands[ind].instructions[1]);
+            if (config.alias.find(commands[ind].instructions[1]) == config.alias.end())
+            {
+                cout << "Not found" << endl;
+                config.ex_status = 1;
+                if (recorder->is_recording)
+                {
+                    recorder->record_data("Not Found");
+                }
+                return;
+            }
+            else
+            {
+                cout << "alias " + search->first + "=" + "\'" + search->second + "\'" << endl;
+                config.ex_status = 0;
+                return;
+            }
+        }
+        if (commands[ind].instructions[1][j + 1] == '\"' || commands[ind].instructions[1][j + 1] == '\'')
+        {
+            j += 2;
+        }
+        else
+        {
+            j++;
+            qflag = 1;
+        }
+        if (len > 2 && qflag == 1)
+        {
+            cout << "Not found"
+                 << endl;
+            if (recorder->is_recording)
+            {
+                recorder->record_data("Not Found");
+            }
+            config.ex_status = 1;
+            return;
+        }
         while (commands[ind].instructions[1][j])
         {
             al_comm += commands[ind].instructions[1][j];
             j++;
         }
-        if (al_comm != "")
+        if (len == 2 && qflag == 0)
         {
-            al_comm += " ";
+            al_comm = al_comm.substr(0, al_comm.length() - 1);
+        }
+        else
+        {
+            if (al_comm != "")
+                al_comm += " ";
         }
         for (int i = 2; i < len - 1; i++)
         {
@@ -1018,7 +1477,7 @@ void handle_alias(vector<Command> commands, int ind)
         }
 
         j = 0;
-        if (commands[ind].instructions[len - 1].length() != 1)
+        if (commands[ind].instructions[len - 1].length() != 1 && len != 2)
         {
             while (j < commands[ind].instructions[len - 1].length() - 1)
             {
@@ -1028,7 +1487,10 @@ void handle_alias(vector<Command> commands, int ind)
         }
 
         config.alias[al_name] = al_comm;
-        alias_modify();
+        if (config.username != "")
+        {
+            env_var_modify();
+        }
         config.ex_status = 0;
     }
 }
@@ -1041,19 +1503,21 @@ void init()
         cout << "No Window size available" << endl;
         return;
     }
+    file_to_alarm_map();
     trie = new Trie();
     trie->initialize_trie();
     getcwd(config.path, 256);
     config.s_path = display_path(string(config.path));
     create_myrc();
     clear_screen();
+    read_file();
     history = new History();
-    config.shell_pg = getpid();
+    recorder = new Recorder();
 
+    config.shell_pg = getpid();
     config.isSuspended = false;
     setpgid(config.shell_pg, config.shell_pg);
 }
-
 void bghandler(int sig)
 {
     int bgstatus = 0;
@@ -1068,6 +1532,54 @@ void bghandler(int sig)
         config.isSuspended = false;
     }
 }
+void alarm_child(int sig)
+{
+    int bgstatus = 0;
+
+    int corpse = waitpid((pid_t)-1, &bgstatus, WNOHANG);
+
+    if (corpse > 0)
+    {
+        config.alarm_map.erase(config.active[corpse]);
+        config.active.erase(corpse);
+        config.children.erase(corpse);
+    }
+}
+bool check_extension_exist(string file_name)
+{
+    vector<string> v = split_string(file_name, '.');
+    if (config.extension_shorcuts.find("." + v[v.size() - 1]) != config.extension_shorcuts.end())
+    {
+        return true;
+    }
+    return false;
+}
+void execute_runnable(vector<Command> commands)
+{
+    if (commands.size() == 1 && commands[0].instructions.size() == 2)
+    {
+        string s = (handle_path(commands[0].instructions[1]));
+        if (!pathexists(s))
+        {
+            cout << "No such file or directory" << endl;
+            config.ex_status = 1;
+        }
+        pid_t pid = fork();
+        if (pid == 0)
+        {
+            vector<string> v = split_string(s, '.');
+            close(2);
+            if (check_extension_exist(commands[0].instructions[1]))
+                execl(config.extension_shorcuts["." + v[v.size() - 1]].second.c_str(), config.extension_shorcuts["." + v[v.size() - 1]].first.c_str(), s.c_str(), (char *)0);
+            else
+                execl("/usr/bin/xdg-open", "xdg-open", s.c_str(), (char *)0);
+            exit(0);
+        }
+        else
+        {
+        }
+    }
+}
 
 int check_builinCommands(vector<Command> commands, vector<Command> &alias)
 {
@@ -1077,38 +1589,73 @@ int check_builinCommands(vector<Command> commands, vector<Command> &alias)
     {
         if (search->second == "exit")
         {
+            kill_all_processes();
             exit(EXIT_SUCCESS);
         }
         alias = process_commands(search->second);
         return 1;
     }
-
+    if (commands[ind].instructions[0] == "$$")
+    {
+        string x = to_string(getpid());
+        cout << x + ": Command not found" << endl;
+        if (recorder->is_recording)
+        {
+            recorder->record_data(x + ": Command not found");
+        }
+        config.ex_status = 127;
+        return 0;
+    }
+    if (commands[ind].instructions[0] == "$?")
+    {
+        string x = to_string(config.ex_status);
+        cout << x + ": Command not found" << endl;
+        if (recorder->is_recording)
+        {
+            recorder->record_data(x + ": Command not found");
+        }
+        config.ex_status = 127;
+        return 0;
+    }
     if (strcmp(commands[ind].instructions[0].c_str(), "cd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "pwd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "export") == 0)
     {
         path_commands(commands, ind);
         return 0;
     }
 
-    if (strcmp(commands[ind].instructions[0].c_str(), "env") == 0 && commands[ind].instructions.size() == 1)
+    if ((strcmp(commands[ind].instructions[0].c_str(), "env") == 0 || strcmp(commands[ind].instructions[0].c_str(), "printenv") == 0) && commands[ind].instructions.size() == 1)
     {
         printmyrc();
         config.ex_status = 0;
         return 0;
     }
 
-    if (strcmp(commands[ind].instructions[0].c_str(), "printenv") == 0 && commands[ind].instructions.size() == 2)
+    if (strcmp(commands[ind].instructions[0].c_str(), "printenv") == 0)
     {
-        if (printenv_value(commands[ind].instructions[1]))
+        if (commands[ind].instructions.size() == 2)
         {
-            config.ex_status = 1;
+            if (printenv_value(commands[ind].instructions[1]))
+            {
+                config.ex_status = 1;
+            }
+            else
+            {
+                config.ex_status = 0;
+            }
         }
-        else
+        else if (commands[ind].instructions.size() == 3)
         {
-            config.ex_status = 0;
+            if (printenv_value(commands[ind].instructions[1] + " " + commands[ind].instructions[2]))
+            {
+                config.ex_status = 1;
+            }
+            else
+            {
+                config.ex_status = 0;
+            }
         }
         return 0;
     }
-
     if (strcmp(commands[ind].instructions[0].c_str(), "echo") == 0)
     {
         handle_echo(commands, ind);
@@ -1120,9 +1667,18 @@ int check_builinCommands(vector<Command> commands, vector<Command> &alias)
         handle_alias(commands, ind);
         return 0;
     }
+    if (strcmp(commands[ind].instructions[0].c_str(), "open") == 0)
+    {
+        execute_runnable(commands);
+        return 0;
+    }
+    if (strcmp(commands[ind].instructions[0].c_str(), "alarm") == 0)
+    {
+        set_alarm(commands[ind].instructions, stoi(commands[ind].instructions[1]));
+        return 0;
+    }
     return -1;
 }
-
 void setFg(int pid)
 {
     if (pid > 0)
@@ -1133,7 +1689,6 @@ void setFg(int pid)
         config.isSuspended = true;
     }
 }
-
 int start_command(vector<Command> commands)
 {
 
@@ -1200,6 +1755,11 @@ int start_command(vector<Command> commands)
                     args[index] = 0;
                     if (execvp(args[0], args) == -1)
                     {
+
+                        if (recorder->is_recording)
+                        {
+                            recorder->record_data("Command Failed");
+                        }
                         cout << "command failed" << flush;
                         _exit(EXIT_FAILURE);
                     }
@@ -1274,6 +1834,10 @@ int start_command(vector<Command> commands)
             args[index] = 0;
             if (execvp(args[0], args) == -1)
             {
+                if (recorder->is_recording)
+                {
+                    recorder->record_data("Command Failed");
+                }
                 cout << "command failed" << flush;
                 _exit(EXIT_FAILURE);
             }
@@ -1285,6 +1849,10 @@ int start_command(vector<Command> commands)
     {
         if (execvp(args[0], args) == -1)
         {
+            if (recorder->is_recording)
+            {
+                recorder->record_data("Command Failed");
+            }
             cout << "command failed" << endl;
             _exit(EXIT_FAILURE);
         }
@@ -1294,20 +1862,28 @@ int start_command(vector<Command> commands)
 
     return 1;
 }
+
 int main(int argc, char const *argv[])
 {
     init();
 
     signal(SIGINT, ctrl_c);
     signal(SIGTTOU, SIG_IGN);
-    /* signal(SIGCHLD, handler); */
+    signal(SIGCHLD, alarm_child);
+    int newy, newx;
     while (1)
     {
         bool exec = true;
 
+        getWindowSize(&newy, &newx);
+        if (newy != cursor.win_y || newx != cursor.win_x)
+        {
+
+            cursor.win_y = newy;
+            cursor.win_x = newx;
+        }
         if (config.isSuspended)
             continue;
-
         string command = read_command(&exec);
         bool isBg = 0;
         for (int i = command.length() - 1; i >= 0; i--)
@@ -1331,85 +1907,106 @@ int main(int argc, char const *argv[])
                 command.pop_back();
             }
         }
-        history->insert(command);
-        if (command == "exit")
+        if (!command.empty())
         {
-            exit(EXIT_SUCCESS);
-            return 0;
-        }
-        if (command == "history")
-        {
-            history->print_history();
-            continue;
-        }
-        if (command.substr(0, 8) == "history " && command.length() > 8)
-        {
-            string keyword = command.substr(8, command.length() - 8);
-            history->search_history_file(keyword);
-            continue;
-        }
-
-        if (command == "fg")
-        {
-            setFg(bg.front());
-            continue;
-        }
-
-        vector<Command> cmds = process_commands(command);
-        vector<Command> builin_commands;
-        int val = check_builinCommands(cmds, builin_commands);
-        if (val == 1)
-        {
-            cmds = builin_commands;
-        }
-        else if (val == 0)
-        {
-            continue;
-        }
-
-        if (!cmds.empty() && exec)
-        {
-            if (isBg)
-                signal(SIGCHLD, bghandler);
-
-            signal(SIGTTIN, SIG_DFL);
-            pid_t pid = fork();
-            pid_t wpid;
-            int status = 0;
-
-            switch (pid)
+            history->insert(command);
+            if (command == "record stop")
             {
-            case -1:
-                cout << "fork error" << endl;
-                break;
+                recorder->stop_recording();
+                continue;
+            }
+            if (recorder->is_recording)
+            {
+                recorder->record_data(command);
+            }
+            if (command == "record start")
+            {
+                recorder->start_recording();
+                continue;
+            }
+            if (command == "exit")
+            {
+                alarm_map_to_file();
+                kill_all_processes();
+                exit(EXIT_SUCCESS);
+                return 0;
+            }
+            if (command == "history")
+            {
+                history->print_history();
+                continue;
+            }
+            if (command.substr(0, 8) == "history " && command.length() > 8)
+            {
+                string keyword = command.substr(8, command.length() - 8);
+                history->search_history_file(keyword);
+                continue;
+            }
+            if (command == "fg")
+            {
+                setFg(bg.front());
+                continue;
+            }
+            vector<Command> cmds = process_commands(command);
+            vector<Command> builin_commands;
+            int val = check_builinCommands(cmds, builin_commands);
+            if (val == 1)
+            {
+                cmds = builin_commands;
+            }
+            else if (val == 0)
+            {
+                continue;
+            }
 
-            case 0:
+            if (!cmds.empty() && exec)
+            {
                 if (isBg)
-                {
-                    setpgrp();
-                    isBg = 0;
-                }
-                start_command(cmds);
-                break;
+                    signal(SIGCHLD, bghandler);
 
-            default:
-                if (!isBg)
+                signal(SIGTTIN, SIG_DFL);
+                pid_t pid = fork();
+                pid_t wpid;
+                int status = 0;
+
+                switch (pid)
                 {
-                    do
+                case -1:
+                    cout << "fork error" << endl;
+                    break;
+
+                case 0:
+                    if (isBg)
                     {
-                        wpid = waitpid(pid, &status, WUNTRACED);
-                    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-                }
+                        setpgrp();
+                        isBg = 0;
+                    }
+                    start_command(cmds);
+                    break;
 
-                if (isBg)
-                {
-                    bg.push_front(pid);
-                    cout << bg.size() << " " << pid << endl;
-                    isBg = 0;
-                }
+                default:
+                    if (!isBg)
+                    {
+                        do
+                        {
+                            wpid = waitpid(pid, &status, WUNTRACED);
+                        } while (!WIFEXITED(status) && !WIFSIGNALED(status));
+                    }
+                    if (WIFEXITED(status))
+                    {
+                        int exit_status = WEXITSTATUS(status);
+                        config.ex_status = exit_status;
+                    }
+                    if (isBg)
+                    {
+                        bg.push_front(pid);
+                        cout << bg.size() << " " << pid << endl;
+                        isBg = 0;
+                    }
 
-                setpgid(pid, pid);
-                tcsetpgrp(config.shell_term, config.shell_pg);
+                    setpgid(pid, pid);
+                    tcsetpgrp(config.shell_term, config.shell_pg);
+                }
             }
         }
     }
