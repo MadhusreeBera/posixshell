@@ -216,6 +216,7 @@ public:
     int shell_id;
     char path[256];
     string s_path;
+    string env_path;
     string username, hostname, symbol;
     string HOME = string(getenv("HOME"));
     string myrc_fullpath;
@@ -439,14 +440,43 @@ int getWindowSize(int *rows, int *cols)
         return 0;
     }
 }
+
+bool fileExists(const std::string& filename)
+{
+    struct stat buf;
+    if (stat(filename.c_str(), &buf) != -1)
+    {
+        return true;
+    }
+    return false;
+}
+
+void handle_alias(vector<Command>, int);
+vector<Command> process_commands(string);
+
 void create_myrc()
 {
+    if(fileExists(".myrc")){
     fstream file;
-    file.open("myrc.txt", ios::out);
+    file.open(".myrc", ios::in);
+    string x;
+    int count = 0;
+    while(getline(file, x)){
+        if(count < 6){
+            count++;
+            continue;
+        }
+        vector<Command> var = process_commands(x);
+        handle_alias(var, 0);
+    }
+    }
+    fstream file;
+    file.open(".myrc", ios::out);
     getcwd(config.myrc_path, 256);
-    config.myrc_fullpath = string(config.myrc_path) + "/myrc.txt";
+    config.myrc_fullpath = string(config.myrc_path) + "/.myrc";
     file << "PATH=" + string(getenv("PATH")) << "\n";
     config.myrc_info += "PATH=" + string(getenv("PATH")) + "\n";
+    config.env_path = string(getenv("PATH"));
     file << "HOME=" + string(getenv("HOME")) << "\n";
     config.myrc_info += "HOME=" + string(getenv("HOME")) + "\n";
     config.username = string(getenv("USER"));
@@ -465,6 +495,11 @@ void create_myrc()
     file << "HISTSIZE=2000"
          << "\n";
     config.myrc_info += "HISTSIZE=2000\n";
+    for (auto i : config.alias)
+    {
+        file << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
+    }
+    file.close();
 }
 
 void enable_shell()
@@ -1094,7 +1129,7 @@ void handle_echo(vector<Command> commands, int ind)
     config.ex_status = 0;
 }
 
-void alias_modify()
+void env_var_modify()
 {
     string line;
     ofstream fout;
@@ -1104,6 +1139,7 @@ void alias_modify()
     {
         fout << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
     }
+    fout.close();
 }
 
 void handle_alias(vector<Command> commands, int ind)
@@ -1207,7 +1243,9 @@ void handle_alias(vector<Command> commands, int ind)
         }
 
         config.alias[al_name] = al_comm;
-        alias_modify();
+        if(config.myrc_info != ""){
+            env_var_modify();
+        }
         config.ex_status = 0;
     }
 }
@@ -1224,8 +1262,8 @@ void init()
     trie->initialize_trie();
     getcwd(config.path, 256);
     config.s_path = display_path(string(config.path));
-    create_myrc();
     clear_screen();
+    create_myrc();
     history = new History();
     recorder = new Recorder();
 }
