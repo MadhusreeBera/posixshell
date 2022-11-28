@@ -814,8 +814,13 @@ vector<Command> process_commands(string shell_i)
     vector<string> tokens = split_string(shell_i, '|');
     for (int i = 0; i < tokens.size(); i++)
     {
-        Command cmd;
-        cmd.instructions = split_string(tokens[i], ' ');
+         Command cmd;
+        vector<string> v = split_string(tokens[i], ' ');
+        for(auto i:v){
+            if(i.empty())
+                continue;
+            cmd.instructions.push_back(i);
+        }
         cmds.push_back(cmd);
     }
     return cmds;
