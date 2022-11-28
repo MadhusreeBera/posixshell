@@ -1939,6 +1939,11 @@ int main(int argc, char const *argv[])
             int val = check_builinCommands(cmds, builin_commands);
             if (val == 1)
             {
+                int bval = check_builinCommands(builin_commands, builin_commands);
+                if (bval == 0)
+                {
+                    continue;
+                }
                 cmds = builin_commands;
             }
             else if (val == 0)
