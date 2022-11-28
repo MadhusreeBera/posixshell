@@ -225,6 +225,7 @@ public:
     char myrc_path[256];
     int shell_term;
     pid_t shell_pg;
+    bool isSuspended;
 } config;
 
 class cursor
@@ -1049,6 +1050,7 @@ void init()
     history = new History();
     config.shell_pg = getpid ();
 
+    config.isSuspended = false;
     setpgid (config.shell_pg, config.shell_pg);
 }
 
@@ -1061,6 +1063,7 @@ void bghandler (int sig){
         cout<<corpse<<" done with status "<<bgstatus<<endl;
         bg.remove (corpse);
         tcsetpgrp (config.shell_term, config.shell_pg);
+        config.isSuspended = false;
     }
 }
 
@@ -1123,9 +1126,9 @@ int check_builinCommands(vector<Command> commands,vector<Command>& alias)
 void setFg (int pid){
     if (pid > 0){
         int status;
-        cout<<"fg "<<getpid () << "\t"<< getpgid (getpid ())<<endl;
-        cout<<"bg "<<pid << "\t" << getpgid (pid)<<endl;
+        cout<<" + "<<pid << "\t"<<endl;
         tcsetpgrp (config.shell_term, pid);
+        config.isSuspended = true;
     }
 }
 
@@ -1154,6 +1157,7 @@ int start_command(vector<Command> commands)
         args[commands[i].instructions.size()] = NULL;
 
         pid = fork();
+        bool redirectFlag = 0;
 
         switch (pid)
         {
@@ -1166,11 +1170,49 @@ int start_command(vector<Command> commands)
             close(pd[0]);
             close(pd[1]);
 
-            if (execvp(args[0], args) == -1)
+            if (args[1] != NULL)
             {
-                cout << "command failed" << endl;
-                _exit(EXIT_FAILURE);
+                int index;
+                for (int j = 0; j < commands[i].instructions.size(); j++)
+                {
+                    if (strcmp(args[j], ">") == 0 || strcmp(args[j], ">>") == 0)
+                    {
+                        index = j;
+                        redirectFlag = 1;
+                        break;
+                    }
+                }
+
+                if (redirectFlag)
+                {
+                    int fd;
+                    if (strcmp(args[index], ">") == 0)
+                    {
+                        fd = open(args[index + 1], O_CREAT | O_WRONLY | O_TRUNC, 0644);
+                    }
+                    else
+                    {
+                        fd = open(args[index + 1], O_CREAT | O_WRONLY | O_APPEND, 0644);
+                    }
+                    dup2(fd, 1);
+                    args[index] = 0;
+                    if (execvp(args[0], args) == -1)
+                    {
+                        cout << "command failed" << flush;
+                        _exit(EXIT_FAILURE);
+                    }
+                    close(fd);
+                }
             }
+
+            if (!redirectFlag){
+                if (execvp(args[0], args) == -1)
+                {
+                    cout << "command failed" << endl;
+                    _exit(EXIT_FAILURE);
+                }
+            }
+
             for (int i = 0; i < commands[i].instructions.size() + 1; i++)
                 delete (args[i]);
             break;
@@ -1259,6 +1301,10 @@ int main(int argc, char const *argv[])
     while (1)
     {
         bool exec = true;
+
+        if (config.isSuspended)
+            continue;
+
         string command = read_command(&exec);
         bool isBg = 0;
         for (int i = command.length () - 1; i>=0; i--){
@@ -1298,7 +1344,6 @@ int main(int argc, char const *argv[])
 
         if (command == "fg"){
             setFg (bg.front ());
-            signal (SIGTTIN, SIG_IGN);
             continue;
         }
 
@@ -1316,6 +1361,7 @@ int main(int argc, char const *argv[])
             if (isBg)
                 signal (SIGCHLD, bghandler);
 
+            signal (SIGTTIN, SIG_DFL);
             pid_t pid = fork();
             pid_t wpid;
             int status = 0;
