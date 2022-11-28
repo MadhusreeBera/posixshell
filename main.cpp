@@ -511,7 +511,7 @@ void env_var_modify()
 void export_new_var(string comm)
 {
     vector<string> s = split_string(comm, '=');
-    if(s.size()==1)
+    if (s.size() == 1)
         return;
     config.env_v[s[0]] = s[1];
     if (config.username != "")
@@ -632,7 +632,8 @@ void read_file()
     {
         vector<string> v = split_string(token, '=');
         if (v[0] == "ext")
-        {   vector<string> vec = split_string(v[1], ' ');
+        {
+            vector<string> vec = split_string(v[1], ' ');
             config.extension_shorcuts[vec[vec.size() - 1]] = make_pair(vec[0], vec[1]);
         }
     }
@@ -648,7 +649,7 @@ string getParent_dir(string s)
     }
     return ret;
 }
-string read_command(bool *exec)
+string read_command(bool *exec,bool *remainder)
 {
     set_cursor_position(cursor.win_y - 1, 1);
     string s;
@@ -665,6 +666,19 @@ string read_command(bool *exec)
             cout << abs(i.first) << "seconds ago   message:" << i.second << endl;
         }
         config.missed_alarm.clear();
+        
+        return "";
+    }
+    if (config.alarm_map.size() > 0&&*remainder)
+    {
+        cout << endl
+             << "Remainders Alarm: " << endl;
+        std::time_t result = std::time(nullptr);
+        for (auto i : config.alarm_map)
+        {
+            cout << abs(i.first)-result << " seconds later   message:" << i.second << endl;
+        }
+        *remainder=false;
         return "";
     }
     cursor.x = s.length();
@@ -1354,7 +1368,7 @@ void file_to_alarm_map()
             config.missed_alarm[t] = v[1];
         }
         else
-        {
+        {   v[1]="alarm 10 "+v[1];
             set_alarm(split_string(v[1], ' '), t);
         }
     }
@@ -1569,7 +1583,7 @@ void execute_runnable(vector<Command> commands)
     }
 }
 
-int check_builinCommands(vector<Command> commands, vector<Command> &alias)
+int check_builinCommands(vector<Command> commands, vector<Command> &alias,bool* remainder)
 {
     int ind = 0;
     auto search = config.alias.find(commands[ind].instructions[0]);
@@ -1663,6 +1677,7 @@ int check_builinCommands(vector<Command> commands, vector<Command> &alias)
     if (strcmp(commands[ind].instructions[0].c_str(), "alarm") == 0)
     {
         set_alarm(commands[ind].instructions, stoi(commands[ind].instructions[1]));
+        *remainder=true;
         return 0;
     }
     return -1;
@@ -1761,9 +1776,9 @@ int start_command(vector<Command> commands)
                 if (execvp(args[0], args) == -1)
                 {
                     if (recorder->is_recording)
-                        {
-                            recorder->record_data("Command Failed");
-                        }
+                    {
+                        recorder->record_data("Command Failed");
+                    }
                     cout << "command failed" << endl;
                     config.ex_status = 127;
                     _exit(EXIT_FAILURE);
@@ -1840,23 +1855,23 @@ int start_command(vector<Command> commands)
         }
     }
 
-    if (!redirectFlag)
-    {
-        if (recorder -> is_recording && freopen ("recording.txt", "a", stdout)){
-            if (execvp(args[0], args) == -1)
-            {
-                cout << "command failed" << endl;
-                _exit(EXIT_FAILURE);
-            }
-        } else {
-            if (execvp(args[0], args) == -1)
-            {
-                cout << "command failed" << endl;
-                _exit(EXIT_FAILURE);
-            }
-        }
-        for (int i = 0; i < commands[n].instructions.size() + 1; i++)
-            delete (args[i]);
+    if (!redirectFlag)	
+    {	
+        if (recorder -> is_recording && freopen ("recording.txt", "a", stdout)){	
+            if (execvp(args[0], args) == -1)	
+            {	
+                cout << "command failed" << endl;	
+                _exit(EXIT_FAILURE);	
+            }	
+        } else {	
+            if (execvp(args[0], args) == -1)	
+            {	
+                cout << "command failed" << endl;	
+                _exit(EXIT_FAILURE);	
+            }	
+        }	
+        for (int i = 0; i < commands[n].instructions.size() + 1; i++)	
+            delete (args[i]);	
     }
 
     return 1;
@@ -1865,7 +1880,7 @@ int start_command(vector<Command> commands)
 int main(int argc, char const *argv[])
 {
     init();
-
+    bool remainder = true;
     signal(SIGINT, ctrl_c);
     signal(SIGTTOU, SIG_IGN);
     signal(SIGCHLD, alarm_child);
@@ -1883,7 +1898,7 @@ int main(int argc, char const *argv[])
         }
         if (config.isSuspended)
             continue;
-        string command = read_command(&exec);
+        string command = read_command(&exec,&remainder);
         bool isBg = 0;
         for (int i = command.length() - 1; i >= 0; i--)
         {
@@ -1948,10 +1963,10 @@ int main(int argc, char const *argv[])
             }
             vector<Command> cmds = process_commands(command);
             vector<Command> builin_commands;
-            int val = check_builinCommands(cmds, builin_commands);
+            int val = check_builinCommands(cmds, builin_commands,&remainder);
             if (val == 1)
             {
-                int bval = check_builinCommands(builin_commands, builin_commands);
+                int bval = check_builinCommands(builin_commands, builin_commands,&remainder);
                 if (bval == 0)
                 {
                     continue;
@@ -2016,3 +2031,4 @@ int main(int argc, char const *argv[])
     }
     return 0;
 }
+
