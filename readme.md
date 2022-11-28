@@ -11,7 +11,7 @@ We have developed a POSIX compatible shell which supports a subset of features o
 
 1.  IO Redirection
     `>>` and `>`
-    space between command, operator, and filename. eg. ls > out.txt is valid. ls>out.txt is not.
+    space between command, operator, and filename is necessary. eg. ls > out.txt is valid. ls>out.txt is not.
 2.  Pipe
     `|`
 3.  Root user prompt change
