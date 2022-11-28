@@ -217,13 +217,13 @@ public:
     char path[256];
     string s_path;
     string env_path;
-    string username, hostname, symbol;
+    string username = "", hostname, symbol;
     string HOME = string(getenv("HOME"));
     string myrc_fullpath;
     int ex_status = 0;
     map<string, string> alias;
-    string myrc_info = "";
     char myrc_path[256];
+    int histsize = 2000;
 } config;
 
 class cursor
@@ -463,6 +463,9 @@ void create_myrc()
     int count = 0;
     while(getline(file, x)){
         if(count < 6){
+            if(x.substr(0, 8) == "HISTSIZE"){
+                config.histsize = stoi(x.substr(9, x.length()-9));
+            }
             count++;
             continue;
         }
@@ -475,26 +478,20 @@ void create_myrc()
     getcwd(config.myrc_path, 256);
     config.myrc_fullpath = string(config.myrc_path) + "/.myrc";
     file << "PATH=" + string(getenv("PATH")) << "\n";
-    config.myrc_info += "PATH=" + string(getenv("PATH")) + "\n";
     config.env_path = string(getenv("PATH"));
     file << "HOME=" + string(getenv("HOME")) << "\n";
-    config.myrc_info += "HOME=" + string(getenv("HOME")) + "\n";
     config.username = string(getenv("USER"));
     file << "USER=" + config.username << "\n";
-    config.myrc_info += "USER=" + config.username + "\n";
     char host[1024];
     memset(host, 0, 1024);
     gethostname(host, 1024);
     config.hostname = string(host);
     file << "HOSTNAME=" + config.hostname << "\n";
-    config.myrc_info += "HOSTNAME=" + config.hostname + "\n";
     config.symbol = "$";
     file << "PS1=$"
          << "\n";
-    config.myrc_info += "PS1=$\n";
-    file << "HISTSIZE=2000"
+    file << "HISTSIZE=" + to_string(config.histsize)
          << "\n";
-    config.myrc_info += "HISTSIZE=2000\n";
     for (auto i : config.alias)
     {
         file << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
@@ -925,6 +922,21 @@ int getHISTSIZE()
     return histsize;
 }
 
+void env_var_modify();
+
+void export_change(string str){
+    if(str.substr(0, 3) == "PS1"){
+        config.symbol = str.substr(4, str.length()-4);
+        config.ex_status = 0;
+        env_var_modify();
+    }
+    else if(str.substr(0, 3) == "HISTSIZE"){
+        config.histsize = stoi(str.substr(9, str.length()-9));
+        config.ex_status = 0;
+        env_var_modify();
+    }
+}
+
 void path_commands(vector<Command> cmds, int ind)
 {
     if (strcmp(cmds[ind].instructions[0].c_str(), "cd") == 0)
@@ -972,10 +984,14 @@ void path_commands(vector<Command> cmds, int ind)
     }
     else
     {
-        if (cmds[ind].instructions.size() == 1 || (cmds[ind].instructions.size() == 2 && strcmp(cmds[ind].instructions[1].c_str(), "-p")))
+        if (cmds[ind].instructions.size() == 1 || (cmds[ind].instructions.size() == 2 && strcmp(cmds[ind].instructions[1].c_str(), "-p")==0))
         {
+            cout<<1<<endl;
             export_print();
             config.ex_status = 0;
+        }
+        else if(cmds[ind].instructions.size() == 2){
+            export_change(cmds[ind].instructions[1]);
         }
         else if (cmds[ind].instructions.size() == 4)
         {
@@ -1134,7 +1150,14 @@ void env_var_modify()
     string line;
     ofstream fout;
     fout.open(config.myrc_fullpath.c_str());
-    fout << config.myrc_info;
+    fout << "PATH=" + config.env_path << "\n";
+    fout << "HOME=" + config.HOME << "\n";
+    fout << "USER=" + config.username << "\n";
+    fout << "HOSTNAME=" + config.hostname << "\n";
+    fout << "PS1=" + config.symbol
+         << "\n";
+    fout << "HISTSIZE=" + to_string(config.histsize)
+         << "\n";
     for (auto i : config.alias)
     {
         fout << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
@@ -1243,7 +1266,7 @@ void handle_alias(vector<Command> commands, int ind)
         }
 
         config.alias[al_name] = al_comm;
-        if(config.myrc_info != ""){
+        if(config.username != ""){
             env_var_modify();
         }
         config.ex_status = 0;
