@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <map>
+#include <unordered_map>
 #include <set>
 
 #define RESET "\033[0m"
@@ -42,20 +43,6 @@
 #define BOLDMAGENTA "\033[1m\033[35m" /* Bold Magenta */
 #define BOLDCYAN "\033[1m\033[36m"    /* Bold Cyan */
 #define BOLDWHITE "\033[1m\033[37m"   /* Bold White */
-
-#define MOD 1000000007
-#define MOD1 998244353
-#define INF 1e18
-#define nline "\n"
-#define pb push_back
-#define ppb pop_back
-#define mp make_pair
-#define ff first
-#define ss second
-#define PI 3.141592653589793238462
-#define set_bits __builtin_popcountll
-#define sz(x) ((int)(x).size())
-#define all(x) (x).begin(), (x).end()
 
 using namespace std;
 
