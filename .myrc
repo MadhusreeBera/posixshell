@@ -3,3 +3,4 @@ HOME=/home/madhusree
 USER=madhusree
 HOSTNAME=Inspiron
 PS1=$
+HISTSIZE=2000
