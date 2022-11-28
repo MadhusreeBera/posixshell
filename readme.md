@@ -8,3 +8,5 @@
 For Any new Data object make a class
 
 Please USE ENUM instead of HARD CODING
+
+### alias, cd, pwd, export, env, printenv, echo
