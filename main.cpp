@@ -1375,6 +1375,26 @@ int check_builinCommands(vector<Command> commands, vector<Command> &alias)
         return 1;
     }
 
+    if (commands[ind].instructions[0] == "$$"){
+        string x = to_string(getpid());
+        cout<<x +": Command not found"<<endl;
+        if(recorder->is_recording){
+            recorder->record_data(x +": Command not found");
+        }
+        config.ex_status = 127;
+        return 0;
+    }
+
+    if (commands[ind].instructions[0] == "$?"){
+        string x = to_string(config.ex_status);
+        cout<<x +": Command not found"<<endl;
+        if(recorder->is_recording){
+            recorder->record_data(x +": Command not found");
+        }
+        config.ex_status = 127;
+        return 0;
+    }
+
     if (strcmp(commands[ind].instructions[0].c_str(), "cd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "pwd") == 0 || strcmp(commands[ind].instructions[0].c_str(), "export") == 0)
     {
         path_commands(commands, ind);
