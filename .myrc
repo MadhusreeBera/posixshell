@@ -4,4 +4,5 @@ USER=madhusree
 HOSTNAME=Inspiron
 PS1=$
 HISTSIZE=2000
+alias bye='exit '
 alias tata='exit'

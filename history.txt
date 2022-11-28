@@ -14,3 +14,10 @@
 14	tata
 15	alias tata='exit'
 16	tata
+17	alias bye=exit
+18	bye
+19	echo hh
+20	skjskjdskl
+21	echo $?
+22	hsi
+23	exit

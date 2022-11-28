@@ -1595,7 +1595,7 @@ int check_builinCommands(vector<Command> commands, vector<Command> &alias, bool 
     auto search = config.alias.find(commands[ind].instructions[0]);
     if (search != config.alias.end())
     {
-        if (search->second == "exit")
+        if (search->second == "exit" || search->second == "exit ")
         {
             kill_all_processes();
             exit(EXIT_SUCCESS);
