@@ -222,6 +222,7 @@ public:
     string myrc_fullpath;
     int ex_status = 0;
     map<string, string> alias;
+    map<string, string> env_v;
     char myrc_path[256];
     int histsize = 2000;
 } config;
@@ -451,6 +452,41 @@ bool fileExists(const std::string& filename)
     return false;
 }
 
+void env_var_modify()
+{
+    string line;
+    ofstream fout;
+    fout.open(config.myrc_fullpath.c_str());
+    fout << "PATH=" + config.env_path << "\n";
+    fout << "HOME=" + config.HOME << "\n";
+    fout << "USER=" + config.username << "\n";
+    fout << "HOSTNAME=" + config.hostname << "\n";
+    fout << "PS1=" + config.symbol
+         << "\n";
+    fout << "HISTSIZE=" + to_string(config.histsize)
+         << "\n";
+    for (auto i : config.alias)
+    {
+        fout << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
+    }
+    for (auto i : config.env_v)
+    {
+        fout << i.first + "=" + i.second + "\n";
+    }
+    fout.close();
+}
+
+
+vector<string> split_string(string, char);
+void export_new_var(string comm){
+    vector<string> s = split_string(comm, '=');
+    config.env_v[s[0]] = s[1];
+    if(config.username != ""){
+        env_var_modify();
+    }
+    config.ex_status = 0;
+}
+
 void handle_alias(vector<Command>, int);
 vector<Command> process_commands(string);
 
@@ -469,8 +505,13 @@ void create_myrc()
             count++;
             continue;
         }
-        vector<Command> var = process_commands(x);
-        handle_alias(var, 0);
+        if(x.substr(0, 5) == "alias"){
+            vector<Command> var = process_commands(x);
+            handle_alias(var, 0);
+        }
+        else{
+            export_new_var(x);
+        }
     }
     }
     fstream file;
@@ -495,6 +536,10 @@ void create_myrc()
     for (auto i : config.alias)
     {
         file << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
+    }
+    for (auto i : config.env_v)
+    {
+        file << i.first + "=" + i.second + "\n";
     }
     file.close();
 }
@@ -772,39 +817,40 @@ void export_print()
     }
     file.close();
 }
-void export_delete(string del_comm, string del_val)
-{
-    string line;
-    ifstream fin;
-    fin.open(config.myrc_fullpath.c_str());
-    ofstream temp;
-    int flag = 0;
-    string tempfile = string(config.myrc_path) + "/temp.txt";
-    temp.open(tempfile.c_str());
-    while (getline(fin, line))
-    {
-        if (line == "" || line == "\n")
-        {
-            continue;
-        }
-        vector<string> var = split_string(line, ' ');
-        if (strcmp(var[0].c_str(), "alias") == 0 && var[1].substr(0, del_val.length()) == del_val)
-        {
-            flag = 1;
+
+void export_delete(string str, int flag){
+    if(flag == 0){
+        auto search = config.env_v.find(str);
+        if(config.env_v.find(str) != config.env_v.end()){
             config.ex_status = 0;
-            continue;
+            config.env_v.erase(str);
+            env_var_modify();
         }
-        temp << line << endl;
+        else{
+            cout<<"Not found"<<endl;
+            config.ex_status = 1;
+            if(recorder->is_recording){
+                recorder->record_data("Not found");
+            }
+        }
     }
-    temp.close();
-    fin.close();
-    remove(config.myrc_fullpath.c_str());
-    rename(tempfile.c_str(), config.myrc_fullpath.c_str());
-    if (flag == 0)
-    {
-        config.ex_status = 1;
+    else{
+        auto search = config.alias.find(str);
+        if(config.alias.find(str) != config.alias.end()){
+            config.ex_status = 0;
+            config.alias.erase(str);
+            env_var_modify();
+        }
+        else{
+            cout<<"Not found"<<endl;
+            config.ex_status = 1;
+            if(recorder->is_recording){
+                recorder->record_data("Not found");
+            }
+        }
     }
 }
+
 bool pathexists(string pathname)
 {
     struct stat buff;
@@ -923,18 +969,33 @@ int getHISTSIZE()
 }
 
 void env_var_modify();
+void handle_alias(vector<Command>, int);
 
-void export_change(string str){
+int export_change(string str){
+    int stat = 0;
     if(str.substr(0, 3) == "PS1"){
         config.symbol = str.substr(4, str.length()-4);
-        config.ex_status = 0;
         env_var_modify();
+        config.ex_status = 0;
+        stat = 1;
     }
     else if(str.substr(0, 3) == "HISTSIZE"){
         config.histsize = stoi(str.substr(9, str.length()-9));
         config.ex_status = 0;
         env_var_modify();
+        stat = 1;
     }
+    else if(config.env_v.find(str) != config.env_v.end()){
+        auto search = config.env_v.find(str);
+        config.env_v[search->first] = search->second;
+        config.ex_status = 0;
+        stat = 1;
+        env_var_modify();
+    }
+    else{
+        stat = 0;
+    }
+    return stat;
 }
 
 void path_commands(vector<Command> cmds, int ind)
@@ -991,14 +1052,24 @@ void path_commands(vector<Command> cmds, int ind)
             config.ex_status = 0;
         }
         else if(cmds[ind].instructions.size() == 2){
-            export_change(cmds[ind].instructions[1]);
-        }
-        else if (cmds[ind].instructions.size() == 4)
-        {
-            if (strcmp(cmds[ind].instructions[1].c_str(), "-n") == 0)
-            {
-                export_delete(cmds[ind].instructions[2], cmds[ind].instructions[3]);
+            if(!export_change(cmds[ind].instructions[1])){
+                export_new_var(cmds[ind].instructions[1]);
             }
+        }
+        else if(cmds[ind].instructions.size() == 3 && cmds[ind].instructions[1] == "-n"){
+            export_delete(cmds[ind].instructions[2], 0);
+        }
+        else if (cmds[ind].instructions.size() == 4 && strcmp(cmds[ind].instructions[1].c_str(), "-n") == 0)
+        {
+                // export_delete(cmds[ind].instructions[2], cmds[ind].instructions[3]);
+                if(cmds[ind].instructions[2].substr(0, 5) == "alias"){
+                    export_delete(cmds[ind].instructions[3], 1);
+            }
+        }
+        else if(cmds[ind].instructions[1].substr(0,5) == "alias"){
+            auto it = cmds[ind].instructions.begin();
+            cmds[ind].instructions.erase(it);
+            handle_alias(cmds, ind);
         }
     }
 }
@@ -1021,6 +1092,7 @@ void printmyrc()
         }
     }
     file.close();
+    config.ex_status = 0;
 }
 
 int printenv_value(string envar)
@@ -1048,6 +1120,13 @@ int printenv_value(string envar)
         if (recorder->is_recording)
         {
             recorder->record_data(config.symbol);
+        }
+    }
+    else if (config.env_v.find(envar) != config.env_v.end()){
+        cout<<config.env_v[envar]<<endl;
+        if (recorder->is_recording)
+        {
+            recorder->record_data(config.env_v[envar]);
         }
     }
     else if (envar.substr(0, 5) == "alias")
@@ -1143,26 +1222,6 @@ void handle_echo(vector<Command> commands, int ind)
         recorder->record_data(s);
     }
     config.ex_status = 0;
-}
-
-void env_var_modify()
-{
-    string line;
-    ofstream fout;
-    fout.open(config.myrc_fullpath.c_str());
-    fout << "PATH=" + config.env_path << "\n";
-    fout << "HOME=" + config.HOME << "\n";
-    fout << "USER=" + config.username << "\n";
-    fout << "HOSTNAME=" + config.hostname << "\n";
-    fout << "PS1=" + config.symbol
-         << "\n";
-    fout << "HISTSIZE=" + to_string(config.histsize)
-         << "\n";
-    for (auto i : config.alias)
-    {
-        fout << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
-    }
-    fout.close();
 }
 
 void handle_alias(vector<Command> commands, int ind)
@@ -1285,8 +1344,8 @@ void init()
     trie->initialize_trie();
     getcwd(config.path, 256);
     config.s_path = display_path(string(config.path));
-    clear_screen();
     create_myrc();
+    clear_screen();
     history = new History();
     recorder = new Recorder();
 }
