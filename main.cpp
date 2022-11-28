@@ -58,79 +58,6 @@
 
 using namespace std;
 
-class Config
-{
-public:
-    struct termios orig_termios;
-    int shell_id;
-    char path[256];
-    string s_path;
-    string env_path;
-    string username, hostname, symbol;
-    string HOME = string(getenv("HOME"));
-    string PATH = string(getenv("PATH"));
-
-    string myrc_fullpath;
-    int ex_status = 0;
-    map<string, string> alias;
-    string myrc_info = "";
-    char myrc_path[256];
-} config;
-list<int> bg;
-
-class cursor
-{
-public:
-    int win_x = 0;
-    int win_y = 0;
-    int x = 1;
-    int y = 1;
-} cursor;
-class Command
-{
-public:
-    vector<string> instructions;
-} cmd;
-enum KEYS
-{
-    ENTER = 10,
-    UP = 65,
-    DOWN = 66,
-    LEFT = 68,
-    RIGHT = 67,
-    BACK_SPACE = 127,
-    HOME = 104,
-    TAB = 9,
-    COLON = 58,
-    ESC = 27,
-    q = 113,
-    Q = 81
-};
-
-class Recorder
-{
-public:
-    ofstream recorder_stream;
-    bool is_recording;
-    Recorder()
-    {
-        recorder_stream.open("recording.txt");
-        is_recording = false;
-    }
-    void start_recording()
-    {
-        is_recording = true;
-    }
-    void stop_recording()
-    {
-        is_recording = false;
-    }
-    void record_data(string data)
-    {
-        recorder_stream << data << endl;
-    }
-} * recorder;
-vector<string> split_string(string s, char ch);
 class Node
 {
 public:
@@ -140,7 +67,7 @@ public:
     Node()
     {
         parent = NULL;
-        for (int i = 0; i < 257; i++)
+        for (int i = 0; i < 27; i++)
         {
             next[i] = NULL;
         }
@@ -148,12 +75,13 @@ public:
     Node(char ch)
     {
         this->ch = ch;
-        for (int i = 0; i < 257; i++)
+        for (int i = 0; i < 27; i++)
         {
             next[i] = NULL;
         }
     }
 };
+list<int> bg;
 class Trie
 {
 public:
@@ -169,50 +97,40 @@ public:
     {
         trie_logger.open("trie_logger.txt");
         trie_logger << "Initializing trie" << endl;
-        trie_logger << config.PATH << endl;
 
-        vector<string> pathList = split_string(config.PATH, ':');
-
-        for (string path : pathList)
+        DIR *dir = opendir("/bin/");
+        trie_logger << "accessing files" << endl;
+        if (dir == NULL)
         {
-            trie_logger << "**********************************************" << endl
-                        << path << endl
-                        << endl;
-            DIR *dir = opendir(path.c_str());
-            trie_logger << "accessing files" << endl;
-            if (dir == NULL)
-            {
-                trie_logger << "not open" << endl;
-                exit(1);
-            }
-            struct dirent *entity;
-            entity = readdir(dir);
-            trie_logger << "printing files" << endl;
-
-            while (entity != NULL)
-            {
-
-                string command_name = string(entity->d_name);
-                // command_name = entity->d_name;
-                if (command_name == "." || command_name == "..")
-                {
-                    entity = readdir(dir);
-
-                    continue;
-                }
-
-                insert(command_name);
-                trie_logger << command_name << endl;
-
-                entity = readdir(dir);
-            }
-            closedir(dir);
+            trie_logger << "not open" << endl;
+            exit(1);
         }
+        struct dirent *entity;
+        entity = readdir(dir);
+        trie_logger << "printing files" << endl;
+
+        while (entity != NULL)
+        {
+
+            string command_name = string(entity->d_name);
+            // command_name = entity->d_name;
+            if (command_name == "." || command_name == "..")
+            {
+                entity = readdir(dir);
+
+                continue;
+            }
+
+            insert(command_name);
+            // trie_logger << command_name << endl;
+
+            entity = readdir(dir);
+        }
+        closedir(dir);
     }
     void insert(string st)
     {
         Node *cur = root;
-
         int n = st.length();
         for (int i = 0; i < n; i++)
         {
@@ -291,20 +209,64 @@ public:
         }
     }
 } * trie;
-int getHISTSIZE();
+class Config
+{
+public:
+    struct termios orig_termios;
+    int shell_id;
+    char path[256];
+    string s_path;
+    string username, hostname, symbol;
+    string HOME = string(getenv("HOME"));
+    string myrc_fullpath;
+    int ex_status = 0;
+    map<string, string> alias;
+    string myrc_info = "";
+    char myrc_path[256];
+    int shell_term;
+    pid_t shell_pg;
+    bool isSuspended;
+} config;
+
+class cursor
+{
+public:
+    int win_x = 0;
+    int win_y = 0;
+    int x = 1;
+    int y = 1;
+} cursor;
+class Command
+{
+public:
+    vector<string> instructions;
+} cmd;
+enum KEYS
+{
+    ENTER = 10,
+    UP = 65,
+    DOWN = 66,
+    LEFT = 68,
+    RIGHT = 67,
+    BACK_SPACE = 127,
+    HOME = 104,
+    TAB = 9,
+    COLON = 58,
+    ESC = 27,
+    q = 113,
+    Q = 81
+};
 class History
 {
 public:
     ofstream history_logger;
     int HISTSIZE, no_of_commands;
-    string history_path;
     History()
     {
         history_logger.open("history.txt", ios_base::app);
-        history_path = string(config.path) + "/history.txt";
         // read HISTSIZE from myrc
 
-        HISTSIZE = getHISTSIZE();
+        HISTSIZE = 100;
         no_of_commands = 0;
 
         ifstream history_if;
@@ -325,20 +287,17 @@ public:
     }
     void print_history()
     {
-
         ifstream history_input_stream;
-        history_input_stream.open(history_path);
+        history_input_stream.open("history.txt");
         if (history_input_stream.fail())
         {
             perror("Failed to load history: ");
-            // return;
+            return;
         }
         string line, line_number;
         for (std::string line; getline(history_input_stream, line);)
         {
             cout << line << endl;
-            if (recorder->is_recording)
-                recorder->record_data(line);
         }
         history_input_stream.close();
     }
@@ -346,7 +305,7 @@ public:
     void search_history_file(string key)
     {
         ifstream history_input_stream;
-        history_input_stream.open(history_path);
+        history_input_stream.open("history.txt");
         if (history_input_stream.fail())
         {
             perror("Failed to open history: ");
@@ -362,9 +321,6 @@ public:
             if (searchResult.size() > 0)
             {
                 cout << line << endl;
-
-                if (recorder->is_recording)
-                    recorder->record_data(line);
             }
         }
         history_input_stream.close();
@@ -460,46 +416,14 @@ int getWindowSize(int *rows, int *cols)
         return 0;
     }
 }
-
-bool fileExists(const std::string &filename)
-{
-    struct stat buf;
-    if (stat(filename.c_str(), &buf) != -1)
-    {
-        return true;
-    }
-    return false;
-}
-
-void handle_alias(vector<Command>, int);
-vector<Command> process_commands(string);
-
 void create_myrc()
 {
-    if (fileExists(".myrc"))
-    {
-        fstream file;
-        file.open(".myrc", ios::in);
-        string x;
-        int count = 0;
-        while (getline(file, x))
-        {
-            if (count < 6)
-            {
-                count++;
-                continue;
-            }
-            vector<Command> var = process_commands(x);
-            handle_alias(var, 0);
-        }
-    }
     fstream file;
-    file.open(".myrc", ios::out);
+    file.open("myrc.txt", ios::out);
     getcwd(config.myrc_path, 256);
-    config.myrc_fullpath = string(config.myrc_path) + "/.myrc";
+    config.myrc_fullpath = string(config.myrc_path) + "/myrc.txt";
     file << "PATH=" + string(getenv("PATH")) << "\n";
     config.myrc_info += "PATH=" + string(getenv("PATH")) + "\n";
-    config.env_path = string(getenv("PATH"));
     file << "HOME=" + string(getenv("HOME")) << "\n";
     config.myrc_info += "HOME=" + string(getenv("HOME")) + "\n";
     config.username = string(getenv("USER"));
@@ -515,16 +439,7 @@ void create_myrc()
     file << "PS1=$"
          << "\n";
     config.myrc_info += "PS1=$\n";
-    file << "HISTSIZE=2000"
-         << "\n";
-    config.myrc_info += "HISTSIZE=2000\n";
-    for (auto i : config.alias)
-    {
-        file << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
-    }
-    file.close();
 }
-
 void enable_shell()
 {
     tcgetattr(STDIN_FILENO, &config.orig_termios);
@@ -715,21 +630,26 @@ void handler(int sig)
         int i = 0;
         /* while (i < jobs.size())
         {
+
             if (jobs[i].PID == pid)
             {
+
                 while (true)
                 {
                     strcpy(j_name, jobs[i].job_name);
+
                     while (true)
                     {
                         jobs.erase(jobs.begin() + i);
                         break;
                     }
+
                     index = 1;
                     break;
                 }
                 break;
             }
+
             i = i + 1;
         } */
 
@@ -771,40 +691,24 @@ void export_print()
     fstream file;
     file.open(config.myrc_fullpath.c_str(), ios::in);
     string x;
-    while (getline(file, x))
+    while (file >> x)
     {
         if (x == "" || x == "\n")
         {
             continue;
         }
-        else if (x.substr(0, 5) == "alias")
-        {
-            cout << "declare -x " << x << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data("declare -x " + x);
-            }
-        }
-        else
-        {
-            vector<string> var = split_string(x, '=');
-            cout << "declare -x " << var[0] << "="
-                 << "\"" << var[1] << "\"" << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data("declare -x " + var[0] + "=" + "\"" + var[1] + "\"");
-            }
-        }
+        vector<string> var = split_string(x, '=');
+        cout << "declare -x " << var[0] << "="
+             << "\"" << var[1] << "\"" << endl;
     }
     file.close();
 }
-void export_delete(string del_comm, string del_val)
+void export_delete(string del_comm)
 {
     string line;
     ifstream fin;
     fin.open(config.myrc_fullpath.c_str());
     ofstream temp;
-    int flag = 0;
     string tempfile = string(config.myrc_path) + "/temp.txt";
     temp.open(tempfile.c_str());
     while (getline(fin, line))
@@ -813,11 +717,9 @@ void export_delete(string del_comm, string del_val)
         {
             continue;
         }
-        vector<string> var = split_string(line, ' ');
-        if (strcmp(var[0].c_str(), "alias") == 0 && var[1].substr(0, del_val.length()) == del_val)
+        vector<string> var = split_string(line, '=');
+        if (strcmp(var[0].c_str(), del_comm.c_str()) == 0)
         {
-            flag = 1;
-            config.ex_status = 0;
             continue;
         }
         temp << line << endl;
@@ -826,10 +728,6 @@ void export_delete(string del_comm, string del_val)
     fin.close();
     remove(config.myrc_fullpath.c_str());
     rename(tempfile.c_str(), config.myrc_fullpath.c_str());
-    if (flag == 0)
-    {
-        config.ex_status = 1;
-    }
 }
 bool pathexists(string pathname)
 {
@@ -927,27 +825,6 @@ string handle_path(string s)
     }
     return x;
 }
-
-int getHISTSIZE()
-{
-    fstream file;
-    file.open(config.myrc_fullpath.c_str(), ios::in);
-    string x;
-    int count = 0;
-    int histsize;
-    while (file >> x)
-    {
-        if (count == 5)
-        {
-            int ind = x.find("=");
-            histsize = stoi(x.substr(ind + 1, 4));
-            break;
-        }
-        count++;
-    }
-    return histsize;
-}
-
 void path_commands(vector<Command> cmds, int ind)
 {
     if (strcmp(cmds[ind].instructions[0].c_str(), "cd") == 0)
@@ -960,10 +837,6 @@ void path_commands(vector<Command> cmds, int ind)
         if (cmds[ind].instructions.size() > 2)
         {
             cout << "Too many arguments" << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data("Too many arguments\n");
-            }
             config.ex_status = 1;
             return;
         }
@@ -971,10 +844,6 @@ void path_commands(vector<Command> cmds, int ind)
         if (!pathexists(s))
         {
             cout << "No such file or directory" << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data("No such file or directory\n");
-            }
             config.ex_status = 1;
             return;
         }
@@ -987,10 +856,6 @@ void path_commands(vector<Command> cmds, int ind)
     else if (strcmp(cmds[ind].instructions[0].c_str(), "pwd") == 0)
     {
         cout << config.path << endl;
-        if (recorder->is_recording)
-        {
-            recorder->record_data(string(config.path));
-        }
         config.ex_status = 0;
     }
     else
@@ -1000,13 +865,13 @@ void path_commands(vector<Command> cmds, int ind)
             export_print();
             config.ex_status = 0;
         }
-        else if (cmds[ind].instructions.size() == 4)
-        {
-            if (strcmp(cmds[ind].instructions[1].c_str(), "-n") == 0)
-            {
-                export_delete(cmds[ind].instructions[2], cmds[ind].instructions[3]);
-            }
-        }
+        // else if (cmds[ind].instructions.size() == 3)
+        // {
+        //     if (strcmp(cmds[ind].instructions[1].c_str(), "-n") == 0)
+        //     {
+        //         export_delete(cmds[ind].instructions[2]);
+        //     }
+        // }
     }
 }
 
@@ -1015,17 +880,13 @@ void printmyrc()
     fstream file;
     file.open(config.myrc_fullpath.c_str(), ios::in);
     string x;
-    while (getline(file, x))
+    while (file >> x)
     {
         if (x == "" || x == "\n")
         {
             continue;
         }
         cout << x << endl;
-        if (recorder->is_recording)
-        {
-            recorder->record_data(x);
-        }
     }
     file.close();
 }
@@ -1036,47 +897,14 @@ int printenv_value(string envar)
     if (envar == "USER")
     {
         cout << config.username << endl;
-        if (recorder->is_recording)
-        {
-            recorder->record_data(config.username);
-        }
     }
     else if (envar == "HOSTNAME")
     {
         cout << config.hostname << endl;
-        if (recorder->is_recording)
-        {
-            recorder->record_data(config.hostname);
-        }
     }
     else if (envar == "PS1")
     {
         cout << config.symbol << endl;
-        if (recorder->is_recording)
-        {
-            recorder->record_data(config.symbol);
-        }
-    }
-    else if (envar.substr(0, 5) == "alias")
-    {
-        string al_name = envar.substr(6, envar.length() - 6);
-        if (config.alias.find(al_name) != config.alias.end())
-        {
-            cout << config.alias[al_name] << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data(config.alias[al_name]);
-            }
-        }
-        else
-        {
-            cout << "Not found" << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data("Not found");
-            }
-            return 1;
-        }
     }
     else
     {
@@ -1086,21 +914,13 @@ int printenv_value(string envar)
         if (envar == "PATH")
         {
             file >> x;
-            cout << x.substr(5, x.length() - 5) << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data(x.substr(5, x.length() - 5));
-            }
+            cout << x << endl;
         }
         else if (envar == "HOME")
         {
             file >> x;
             file >> x;
-            cout << x.substr(5, x.length() - 5) << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data(x.substr(5, x.length() - 5));
-            }
+            cout << x << endl;
         }
         else
         {
@@ -1113,7 +933,6 @@ int printenv_value(string envar)
 
 void handle_echo(vector<Command> commands, int ind)
 {
-    string s = "";
     for (int i = 1; i < commands[ind].instructions.size(); i++)
     {
         for (int j = 0; j < commands[ind].instructions[i].length(); j++)
@@ -1124,36 +943,27 @@ void handle_echo(vector<Command> commands, int ind)
                 {
                     if (commands[ind].instructions[i][j + 1] == '$')
                     {
-                        int x = getpid();
-                        cout << to_string(x);
-                        s += x;
+                        cout << getpid();
                         j++;
                         continue;
                     }
                     else if (commands[ind].instructions[i][j + 1] == '?')
                     {
                         cout << config.ex_status;
-                        s += to_string(config.ex_status);
                         j++;
                         continue;
                     }
                 }
             }
             cout << commands[ind].instructions[i][j];
-            s += commands[ind].instructions[i][j];
         }
         cout << " ";
-        s += " ";
     }
     cout << endl;
-    if (recorder->is_recording)
-    {
-        recorder->record_data(s);
-    }
     config.ex_status = 0;
 }
 
-void env_var_modify()
+void alias_modify()
 {
     string line;
     ofstream fout;
@@ -1163,7 +973,6 @@ void env_var_modify()
     {
         fout << "alias " + i.first + "=" + "\'" + i.second + "\'\n";
     }
-    fout.close();
 }
 
 void handle_alias(vector<Command> commands, int ind)
@@ -1174,17 +983,13 @@ void handle_alias(vector<Command> commands, int ind)
         for (auto i : config.alias)
         {
             cout << "alias " + i.first + "=" + "\'" + i.second + "\'" << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data("alias " + i.first + "=" + "\'" + i.second + "\' \n");
-            }
         }
         config.ex_status = 0;
         return;
     }
     else
     {
-        int j, qflag = 0;
+        int j;
         string al_name = "", al_comm = "";
         for (j = 0; j < commands[ind].instructions[1].length(); j++)
         {
@@ -1197,59 +1002,15 @@ void handle_alias(vector<Command> commands, int ind)
                 break;
             }
         }
-        if (j == commands[ind].instructions[1].length())
-        {
-            auto search = config.alias.find(commands[ind].instructions[1]);
-            if (config.alias.find(commands[ind].instructions[1]) == config.alias.end())
-            {
-                cout << "Not found" << endl;
-                config.ex_status = 1;
-                if (recorder->is_recording)
-                {
-                    recorder->record_data("Not Found");
-                }
-                return;
-            }
-            else
-            {
-                cout << "alias " + search->first + "=" + "\'" + search->second + "\'" << endl;
-                config.ex_status = 0;
-                return;
-            }
-        }
-        if (commands[ind].instructions[1][j + 1] == '\"' || commands[ind].instructions[1][j + 1] == '\'')
-        {
-            j += 2;
-        }
-        else
-        {
-            j++;
-            qflag = 1;
-        }
-        if (len > 2 && qflag == 1)
-        {
-            cout << "Not found"
-                 << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data("Not Found");
-            }
-            config.ex_status = 1;
-            return;
-        }
+        j += 2;
         while (commands[ind].instructions[1][j])
         {
             al_comm += commands[ind].instructions[1][j];
             j++;
         }
-        if (len == 2 && qflag == 0)
+        if (al_comm != "")
         {
-            al_comm = al_comm.substr(0, al_comm.length() - 1);
-        }
-        else
-        {
-            if (al_comm != "")
-                al_comm += " ";
+            al_comm += " ";
         }
         for (int i = 2; i < len - 1; i++)
         {
@@ -1257,7 +1018,7 @@ void handle_alias(vector<Command> commands, int ind)
         }
 
         j = 0;
-        if (commands[ind].instructions[len - 1].length() != 1 && len != 2)
+        if (commands[ind].instructions[len - 1].length() != 1)
         {
             while (j < commands[ind].instructions[len - 1].length() - 1)
             {
@@ -1267,10 +1028,7 @@ void handle_alias(vector<Command> commands, int ind)
         }
 
         config.alias[al_name] = al_comm;
-        if (config.myrc_info != "")
-        {
-            env_var_modify();
-        }
+        alias_modify();
         config.ex_status = 0;
     }
 }
@@ -1287,23 +1045,30 @@ void init()
     trie->initialize_trie();
     getcwd(config.path, 256);
     config.s_path = display_path(string(config.path));
-    clear_screen();
     create_myrc();
+    clear_screen();
     history = new History();
-    recorder = new Recorder();
+    config.shell_pg = getpid();
+
+    config.isSuspended = false;
+    setpgid(config.shell_pg, config.shell_pg);
 }
+
 void bghandler(int sig)
 {
     int bgstatus = 0;
-    for (list<int>::iterator bgp = bg.begin(); bgp != bg.end(); bgp++)
+
+    int corpse = waitpid((pid_t)-1, &bgstatus, WNOHANG);
+
+    if (corpse > 0)
     {
-        if (waitpid(*bgp, &bgstatus, WNOHANG))
-        {
-            cout << *bgp << " done with status " << bgstatus << endl;
-            bg.erase(bgp);
-        }
+        cout << corpse << " done with status " << bgstatus << endl;
+        bg.remove(corpse);
+        tcsetpgrp(config.shell_term, config.shell_pg);
+        config.isSuspended = false;
     }
 }
+
 int check_builinCommands(vector<Command> commands, vector<Command> &alias)
 {
     int ind = 0;
@@ -1324,36 +1089,22 @@ int check_builinCommands(vector<Command> commands, vector<Command> &alias)
         return 0;
     }
 
-    if ((strcmp(commands[ind].instructions[0].c_str(), "env") == 0 || strcmp(commands[ind].instructions[0].c_str(), "printenv") == 0) && commands[ind].instructions.size() == 1)
+    if (strcmp(commands[ind].instructions[0].c_str(), "env") == 0 && commands[ind].instructions.size() == 1)
     {
         printmyrc();
         config.ex_status = 0;
         return 0;
     }
 
-    if (strcmp(commands[ind].instructions[0].c_str(), "printenv") == 0)
+    if (strcmp(commands[ind].instructions[0].c_str(), "printenv") == 0 && commands[ind].instructions.size() == 2)
     {
-        if (commands[ind].instructions.size() == 2)
+        if (printenv_value(commands[ind].instructions[1]))
         {
-            if (printenv_value(commands[ind].instructions[1]))
-            {
-                config.ex_status = 1;
-            }
-            else
-            {
-                config.ex_status = 0;
-            }
+            config.ex_status = 1;
         }
-        else if (commands[ind].instructions.size() == 3)
+        else
         {
-            if (printenv_value(commands[ind].instructions[1] + " " + commands[ind].instructions[2]))
-            {
-                config.ex_status = 1;
-            }
-            else
-            {
-                config.ex_status = 0;
-            }
+            config.ex_status = 0;
         }
         return 0;
     }
@@ -1371,6 +1122,18 @@ int check_builinCommands(vector<Command> commands, vector<Command> &alias)
     }
     return -1;
 }
+
+void setFg(int pid)
+{
+    if (pid > 0)
+    {
+        int status;
+        cout << " + " << pid << "\t" << endl;
+        tcsetpgrp(config.shell_term, pid);
+        config.isSuspended = true;
+    }
+}
+
 int start_command(vector<Command> commands)
 {
 
@@ -1396,6 +1159,7 @@ int start_command(vector<Command> commands)
         args[commands[i].instructions.size()] = NULL;
 
         pid = fork();
+        bool redirectFlag = 0;
 
         switch (pid)
         {
@@ -1408,16 +1172,50 @@ int start_command(vector<Command> commands)
             close(pd[0]);
             close(pd[1]);
 
-            if (execvp(args[0], args) == -1)
+            if (args[1] != NULL)
             {
-                cout << "command failed" << endl;
-                if (recorder->is_recording)
+                int index;
+                for (int j = 0; j < commands[i].instructions.size(); j++)
                 {
-                    recorder->record_data("Command Failed");
+                    if (strcmp(args[j], ">") == 0 || strcmp(args[j], ">>") == 0)
+                    {
+                        index = j;
+                        redirectFlag = 1;
+                        break;
+                    }
                 }
-                config.ex_status = 127;
-                _exit(EXIT_FAILURE);
+
+                if (redirectFlag)
+                {
+                    int fd;
+                    if (strcmp(args[index], ">") == 0)
+                    {
+                        fd = open(args[index + 1], O_CREAT | O_WRONLY | O_TRUNC, 0644);
+                    }
+                    else
+                    {
+                        fd = open(args[index + 1], O_CREAT | O_WRONLY | O_APPEND, 0644);
+                    }
+                    dup2(fd, 1);
+                    args[index] = 0;
+                    if (execvp(args[0], args) == -1)
+                    {
+                        cout << "command failed" << flush;
+                        _exit(EXIT_FAILURE);
+                    }
+                    close(fd);
+                }
             }
+
+            if (!redirectFlag)
+            {
+                if (execvp(args[0], args) == -1)
+                {
+                    cout << "command failed" << endl;
+                    _exit(EXIT_FAILURE);
+                }
+            }
+
             for (int i = 0; i < commands[i].instructions.size() + 1; i++)
                 delete (args[i]);
             break;
@@ -1427,11 +1225,6 @@ int start_command(vector<Command> commands)
             {
                 wpid = waitpid(pid, &status, WUNTRACED);
             } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-            if (WIFEXITED(status))
-            {
-                int exit_status = WEXITSTATUS(status);
-                config.ex_status = exit_status;
-            }
             break;
         }
 
@@ -1440,8 +1233,6 @@ int start_command(vector<Command> commands)
         close(pd[0]);
     }
 
-    pid_t pid, wpid;
-    int status;
     int n = commands.size() - 1;
 
     char *args[commands[n].instructions.size() + 1];
@@ -1454,46 +1245,8 @@ int start_command(vector<Command> commands)
     args[commands[n].instructions.size()] = NULL;
 
     bool redirectFlag = 0;
-    bool isBg = 0;
 
-    if (strcmp(args[commands[n].instructions.size() - 1], "&") == 0 || args[commands[n].instructions.size() - 1][commands[n].instructions[commands[n].instructions.size() - 1].length() - 1] == '&')
-    {
-        isBg = 1;
-        signal(SIGCHLD, bghandler);
-        pid_t pid = fork();
-
-        switch (pid)
-        {
-        case -1:
-            cout << "fork failed" << endl;
-            break;
-        case 0:
-            if (strcmp(args[commands[n].instructions.size() - 1], "&") == 0)
-            {
-                args[commands[n].instructions.size() - 1] = NULL;
-            }
-            else
-            {
-                args[commands[n].instructions.size() - 1][commands[n].instructions[commands[n].instructions.size() - 1].length() - 1] = '\0';
-            }
-            if (execvp(args[0], args) == -1)
-            {
-                cout << "command failed" << flush;
-                if (recorder->is_recording)
-                {
-                    recorder->record_data("Command Failed");
-                }
-                config.ex_status = 127;
-                _exit(EXIT_FAILURE);
-            }
-            break;
-        }
-        bg.push_back(pid);
-        setpgid(pid, 0);
-        cout << bg.size() << " " << pid << endl;
-    }
-
-    if (&isBg && args[1] != NULL)
+    if (args[1] != NULL)
     {
         int index;
         for (int i = 0; i < commands[n].instructions.size(); i++)
@@ -1522,27 +1275,17 @@ int start_command(vector<Command> commands)
             if (execvp(args[0], args) == -1)
             {
                 cout << "command failed" << flush;
-                if (recorder->is_recording)
-                {
-                    recorder->record_data("Command Failed");
-                }
-                config.ex_status = 127;
                 _exit(EXIT_FAILURE);
             }
             close(fd);
         }
     }
 
-    if (!isBg && !redirectFlag)
+    if (!redirectFlag)
     {
         if (execvp(args[0], args) == -1)
         {
             cout << "command failed" << endl;
-            if (recorder->is_recording)
-            {
-                recorder->record_data("Command Failed");
-            }
-            config.ex_status = 127;
             _exit(EXIT_FAILURE);
         }
         for (int i = 0; i < commands[n].instructions.size() + 1; i++)
@@ -1556,27 +1299,39 @@ int main(int argc, char const *argv[])
     init();
 
     signal(SIGINT, ctrl_c);
+    signal(SIGTTOU, SIG_IGN);
     /* signal(SIGCHLD, handler); */
     while (1)
     {
         bool exec = true;
+
+        if (config.isSuspended)
+            continue;
+
         string command = read_command(&exec);
-        history->insert(command);
-        if (command == "record stop")
+        bool isBg = 0;
+        for (int i = command.length() - 1; i >= 0; i--)
         {
-            recorder->stop_recording();
-            continue;
-        }
-        if (recorder->is_recording)
-        {
-            recorder->record_data(command);
-        }
-        if (command == "record start")
-        {
-            recorder->start_recording();
-            continue;
+            if (command[i] == '&')
+            {
+                isBg = 1;
+                command.pop_back();
+                break;
+            }
+
+            if (command[i] != ' ')
+                break;
         }
 
+        if (command[command.length() - 1] == ' ')
+        {
+            int i = command.length() - 1;
+            while (command[i] == ' ')
+            {
+                command.pop_back();
+            }
+        }
+        history->insert(command);
         if (command == "exit")
         {
             exit(EXIT_SUCCESS);
@@ -1593,16 +1348,18 @@ int main(int argc, char const *argv[])
             history->search_history_file(keyword);
             continue;
         }
+
+        if (command == "fg")
+        {
+            setFg(bg.front());
+            continue;
+        }
+
         vector<Command> cmds = process_commands(command);
         vector<Command> builin_commands;
         int val = check_builinCommands(cmds, builin_commands);
         if (val == 1)
         {
-            int bval = check_builinCommands(builin_commands, builin_commands);
-            if (bval == 0)
-            {
-                continue;
-            }
             cmds = builin_commands;
         }
         else if (val == 0)
@@ -1612,7 +1369,10 @@ int main(int argc, char const *argv[])
 
         if (!cmds.empty() && exec)
         {
+            if (isBg)
+                signal(SIGCHLD, bghandler);
 
+            signal(SIGTTIN, SIG_DFL);
             pid_t pid = fork();
             pid_t wpid;
             int status = 0;
@@ -1624,20 +1384,32 @@ int main(int argc, char const *argv[])
                 break;
 
             case 0:
+                if (isBg)
+                {
+                    setpgrp();
+                    isBg = 0;
+                }
                 start_command(cmds);
                 break;
 
             default:
-                do
+                if (!isBg)
                 {
-                    wpid = waitpid(pid, &status, WUNTRACED);
-                } while (!WIFEXITED(status) && !WIFSIGNALED(status));
-                if (WIFEXITED(status))
-                {
-                    int exit_status = WEXITSTATUS(status);
-                    config.ex_status = exit_status;
+                    do
+                    {
+                        wpid = waitpid(pid, &status, WUNTRACED);
+                    } while (!WIFEXITED(status) && !WIFSIGNALED(status));
                 }
-                break;
+
+                if (isBg)
+                {
+                    bg.push_front(pid);
+                    cout << bg.size() << " " << pid << endl;
+                    isBg = 0;
+                }
+
+                setpgid(pid, pid);
+                tcsetpgrp(config.shell_term, config.shell_pg);
             }
         }
     }
