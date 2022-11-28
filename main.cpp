@@ -1748,6 +1748,7 @@ int start_command(vector<Command> commands)
                             recorder->record_data("Command Failed");
                         }
                         cout << "command failed" << flush;
+                        config.ex_status = 127;
                         _exit(EXIT_FAILURE);
                     }
                     close(fd);
@@ -1758,7 +1759,12 @@ int start_command(vector<Command> commands)
             {
                 if (execvp(args[0], args) == -1)
                 {
+                    if (recorder->is_recording)
+                        {
+                            recorder->record_data("Command Failed");
+                        }
                     cout << "command failed" << endl;
+                    config.ex_status = 127;
                     _exit(EXIT_FAILURE);
                 }
             }
@@ -1826,6 +1832,7 @@ int start_command(vector<Command> commands)
                     recorder->record_data("Command Failed");
                 }
                 cout << "command failed" << flush;
+                config.ex_status = 127;
                 _exit(EXIT_FAILURE);
             }
             close(fd);
@@ -1841,6 +1848,7 @@ int start_command(vector<Command> commands)
                 recorder->record_data("Command Failed");
             }
             cout << "command failed" << endl;
+            config.ex_status = 127;
             _exit(EXIT_FAILURE);
         }
         for (int i = 0; i < commands[n].instructions.size() + 1; i++)
