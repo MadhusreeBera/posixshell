@@ -91,7 +91,7 @@ public:
     }
     void record_data(string data)
     {
-        recorder_stream.seekp (0, ios::end);
+        recorder_stream.seekp(0, ios::end);
         recorder_stream << data << endl;
     }
 } * recorder;
@@ -399,7 +399,7 @@ void disable_shell()
     kill_all_processes();
     if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &config.orig_termios) != 0)
     {
-        exit(EXIT_FAILURE);
+        exit(127);
     };
 }
 void ctrl_c(int signum)
@@ -649,7 +649,7 @@ string getParent_dir(string s)
     }
     return ret;
 }
-string read_command(bool *exec,bool *remainder)
+string read_command(bool *exec, bool *remainder)
 {
     set_cursor_position(cursor.win_y - 1, 1);
     string s;
@@ -666,19 +666,19 @@ string read_command(bool *exec,bool *remainder)
             cout << abs(i.first) << "seconds ago   message:" << i.second << endl;
         }
         config.missed_alarm.clear();
-        
+
         return "";
     }
-    if (config.alarm_map.size() > 0&&*remainder)
+    if (config.alarm_map.size() > 0 && *remainder)
     {
         cout << endl
              << "Remainders Alarm: " << endl;
         std::time_t result = std::time(nullptr);
         for (auto i : config.alarm_map)
         {
-            cout << abs(i.first)-result << " seconds later   message:" << i.second << endl;
+            cout << abs(i.first) - result << " seconds later   message:" << i.second << endl;
         }
-        *remainder=false;
+        *remainder = false;
         return "";
     }
     cursor.x = s.length();
@@ -814,10 +814,11 @@ vector<Command> process_commands(string shell_i)
     vector<string> tokens = split_string(shell_i, '|');
     for (int i = 0; i < tokens.size(); i++)
     {
-         Command cmd;
+        Command cmd;
         vector<string> v = split_string(tokens[i], ' ');
-        for(auto i:v){
-            if(i.empty())
+        for (auto i : v)
+        {
+            if (i.empty())
                 continue;
             cmd.instructions.push_back(i);
         }
@@ -1136,7 +1137,6 @@ void path_commands(vector<Command> cmds, int ind)
     {
         if (cmds[ind].instructions.size() == 1 || (cmds[ind].instructions.size() == 2 && strcmp(cmds[ind].instructions[1].c_str(), "-p") == 0))
         {
-            cout << 1 << endl;
             export_print();
             config.ex_status = 0;
         }
@@ -1373,7 +1373,8 @@ void file_to_alarm_map()
             config.missed_alarm[t] = v[1];
         }
         else
-        {   v[1]="alarm 10 "+v[1];
+        {
+            v[1] = "alarm 10 " + v[1];
             set_alarm(split_string(v[1], ' '), t);
         }
     }
@@ -1588,7 +1589,7 @@ void execute_runnable(vector<Command> commands)
     }
 }
 
-int check_builinCommands(vector<Command> commands, vector<Command> &alias,bool* remainder)
+int check_builinCommands(vector<Command> commands, vector<Command> &alias, bool *remainder)
 {
     int ind = 0;
     auto search = config.alias.find(commands[ind].instructions[0]);
@@ -1682,7 +1683,7 @@ int check_builinCommands(vector<Command> commands, vector<Command> &alias,bool* 
     if (strcmp(commands[ind].instructions[0].c_str(), "alarm") == 0)
     {
         set_alarm(commands[ind].instructions, stoi(commands[ind].instructions[1]));
-        *remainder=true;
+        *remainder = true;
         return 0;
     }
     return -1;
@@ -1770,7 +1771,7 @@ int start_command(vector<Command> commands)
                         }
                         cout << "command failed" << flush;
                         config.ex_status = 127;
-                        _exit(EXIT_FAILURE);
+                        _exit(127);
                     }
                     close(fd);
                 }
@@ -1786,7 +1787,7 @@ int start_command(vector<Command> commands)
                     }
                     cout << "command failed" << endl;
                     config.ex_status = 127;
-                    _exit(EXIT_FAILURE);
+                    _exit(127);
                 }
             }
 
@@ -1854,29 +1855,32 @@ int start_command(vector<Command> commands)
                 }
                 cout << "command failed" << flush;
                 config.ex_status = 127;
-                _exit(EXIT_FAILURE);
+                _exit(127);
             }
             close(fd);
         }
     }
 
-    if (!redirectFlag)	
-    {	
-        if (recorder -> is_recording && freopen ("recording.txt", "a", stdout)){	
-            if (execvp(args[0], args) == -1)	
-            {	
-                cout << "command failed" << endl;	
-                _exit(EXIT_FAILURE);	
-            }	
-        } else {	
-            if (execvp(args[0], args) == -1)	
-            {	
-                cout << "command failed" << endl;	
-                _exit(EXIT_FAILURE);	
-            }	
-        }	
-        for (int i = 0; i < commands[n].instructions.size() + 1; i++)	
-            delete (args[i]);	
+    if (!redirectFlag)
+    {
+        if (recorder->is_recording && freopen("recording.txt", "a", stdout))
+        {
+            if (execvp(args[0], args) == -1)
+            {
+                cout << "command failed" << endl;
+                _exit(127);
+            }
+        }
+        else
+        {
+            if (execvp(args[0], args) == -1)
+            {
+                cout << "command failed" << endl;
+                _exit(127);
+            }
+        }
+        for (int i = 0; i < commands[n].instructions.size() + 1; i++)
+            delete (args[i]);
     }
 
     return 1;
@@ -1903,7 +1907,7 @@ int main(int argc, char const *argv[])
         }
         if (config.isSuspended)
             continue;
-        string command = read_command(&exec,&remainder);
+        string command = read_command(&exec, &remainder);
         bool isBg = 0;
         for (int i = command.length() - 1; i >= 0; i--)
         {
@@ -1968,10 +1972,10 @@ int main(int argc, char const *argv[])
             }
             vector<Command> cmds = process_commands(command);
             vector<Command> builin_commands;
-            int val = check_builinCommands(cmds, builin_commands,&remainder);
+            int val = check_builinCommands(cmds, builin_commands, &remainder);
             if (val == 1)
             {
-                int bval = check_builinCommands(builin_commands, builin_commands,&remainder);
+                int bval = check_builinCommands(builin_commands, builin_commands, &remainder);
                 if (bval == 0)
                 {
                     continue;
@@ -2036,4 +2040,3 @@ int main(int argc, char const *argv[])
     }
     return 0;
 }
-

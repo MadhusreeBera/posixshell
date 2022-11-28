@@ -1,2 +1,16 @@
 1	ls | grep a
 2	ls
+3	hello world
+4	h
+5	history
+6	history ls
+7	env
+8	printenv
+9	printenv HOME
+10	alarm 5 hiiiii
+11	cool
+12	bye
+13	alias tata=exit
+14	tata
+15	alias tata='exit'
+16	tata
